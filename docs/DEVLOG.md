@@ -88,3 +88,60 @@ browser playground.
 is my best guess at its feel (quick launch, strong brakes, momentum through
 jumps). Try it in the browser and tell me what feels off. The usual knobs are
 `engine.accelCurve`, `steering.maxYawRate`, `drift.grip` and `drift.yawBase`.
+
+## Phase 3 — Visual style pipeline
+
+**Built** (`src/rendering/`)
+- `shaders.js` / `materials.js`: one custom toon `ShaderMaterial` family.
+  Half-Lambert lighting is quantised into **3 flat bands** (lit / mid / shadow)
+  with themeable tints. **Halftone** is computed in the same fragment shader:
+  a 45° screen-space dot grid whose dot radius grows as light falls off, so
+  shadows print like comic-book dots. It's pure ALU with no texture fetch and
+  no extra pass. There's an optional flat specular + rim "shine" for the car
+  paint and glass. Global uniforms (light, fog, ink, pixel scale) are shared
+  objects, so theme changes are free.
+- `outline.js`: **inverted-hull ink outlines** extruded along averaged
+  "outline normals" by a constant number of *screen pixels* (thinning past
+  45 m). Every static mesh carries an `outlineNormal` attribute, so hard-edged
+  boxes and extrusions get closed hulls.
+- `Sky.js`: poster background. A gradient dome with a halftone horizon band
+  and an inked, halftone-glow sun, plus concentric cylinders with canvas-
+  painted silhouettes (city skylines with lit windows, mountains with snow
+  caps, jungle canopy + temples, drifting clouds). About 4 unlit draw calls.
+- `textures.js`: all textures are drawn on canvases at load (hand-wobbled
+  brush strokes, hatching, edge lines): road atlases per theme (asphalt,
+  stone slabs, packed snow, ice, boost chevrons), comic smoke puff, spark
+  starburst, halftone contact shadow. No image assets to download.
+- `SpeedLines.js`: ink streaks built directly in clip space. One draw call,
+  ~110 triangles, covering only the screen border. Intensity follows speed,
+  drift and boost.
+- `CarModel.js` / `CarView.js`: procedural wedge racer (~1.2k tris) with
+  cabin, wing, stripes, lights, spinning/steering wheels, suspension droop,
+  body roll and pitch, **squash-and-stretch on landings**, halftone contact
+  shadow, ink **skid marks** (tapered ribbon ring-buffer), comic smoke puffs,
+  drift sparks coloured by boost tier (blue → orange → pink), boost exhaust.
+- `GeoBuilder` merges primitives into single meshes, and `sweepRoadGeometry`
+  sweeps a closed road profile (surface, walls, striped curbs, slab) along the
+  same path frames used for collision.
+
+**Verified**: `scripts/verify-phase3.mjs` screenshots (idle, speed, jump,
+drift, boost) show 3-band shading, dot shading on shadow sides, bold
+silhouettes, poster skyline and speed lines. Scene cost: **~30 draw calls,
+~13–20k triangles**, no post-processing, no render targets, native MSAA.
+
+**Decision: inverted hull, not Sobel edge detection.** Edge detection needs a
+depth+normal pre-pass (about 2× draw calls) plus a full-screen 9-tap filter
+at native resolution. That is exactly the fill-rate and bandwidth that
+tile-based phone GPUs are short of, and it forces an offscreen target (no
+cheap MSAA). The hull adds one flat-shaded draw per mesh and keeps MSAA. Cost:
+no interior crease lines, so road edges, curbs and panel lines are painted
+into geometry/textures instead.
+
+**Framerate note**: this container only has software WebGL (SwiftShader), so
+absolute fps here (15–30) says nothing about a phone GPU. The budget is what
+matters: ~30 draws, < 25k tris, one pass. Real-device-class profiling
+(CPU-throttled) is part of Phase 9.
+
+**Colour management** is disabled on purpose: comic colours are authored as
+sRGB hex and shaded with flat multipliers in display space, so a "#ff4d5a"
+wall top is exactly that colour on screen.

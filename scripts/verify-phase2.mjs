@@ -4,7 +4,7 @@ const { browser, page, logs } = await launch();
 await page.goto(url);
 await page.waitForFunction(() => window.__INKTRACK__);
 const state = () => page.evaluate(() => {
-  const c = window.__INKTRACK__.car;
+  const c = window.__INKTRACK__.mode.car;
   return { pos: c.position.toArray().map((v) => +v.toFixed(1)), kmh: Math.round(c.speed * 3.6), drifting: c.drifting, meter: +c.driftMeter.toFixed(2), boost: +c.boostTime.toFixed(2), grounded: c.grounded };
 });
 // Straight run over the boost pad and the kicker.
