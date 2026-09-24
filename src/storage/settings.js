@@ -3,8 +3,10 @@ import { readJSON, writeJSON } from './storage.js';
 /** Player settings with defaults, persisted to localStorage. */
 const DEFAULTS = {
   ghost: true,
-  volume: 0.7,
+  volume: 0.8,
   music: true,
+  musicVolume: 0.55,
+  engineVolume: 0.3,
   quality: 'auto', // auto | low | medium | high
   showFps: false,
   steering: 'zones', // zones | tilt (mobile)

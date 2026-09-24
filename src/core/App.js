@@ -17,6 +17,7 @@ import { listCustomTracks } from '../storage/customTracks.js';
 import { Editor } from '../editor/Editor.js';
 import { TouchControls, hasTouch } from '../input/Touch.js';
 import { Sfx } from '../audio/Sfx.js';
+import { songForTheme } from '../audio/songs.js';
 
 /**
  * Top-level state machine. Owns the renderer, the shared Stage, input, the
@@ -189,6 +190,8 @@ export class App {
         setTimeout(() => this.modeName === 'menu' && this.mode?.options.attract && this._nextAttract(), 1500);
       },
     }));
+    this.audio.setMusicMuffled(false);
+    this.audio.playMusic('menu');
     this.menus.open(screen);
   }
 
@@ -221,6 +224,8 @@ export class App {
       onFinish: (e, s) => this._onFinish(e, s, track, key),
     });
     this.setMode(session);
+    this.audio.setMusicMuffled(false);
+    this.audio.playMusic(songForTheme(track.theme));
     return session;
   }
 
@@ -262,6 +267,7 @@ export class App {
     else {
       this.menus.hide();
       this.paused = false;
+      this.audio.setMusicMuffled(false);
       this.mode.restart();
     }
   }
@@ -271,6 +277,7 @@ export class App {
     if (this.mode.race.state === 'finished') return;
     this.paused = true;
     this.audio.setBed(false);
+    this.audio.setMusicMuffled(true);
     this.menus.open('pause');
   }
 
@@ -278,6 +285,7 @@ export class App {
     if (!this.paused) return;
     this.menus.hide();
     this.paused = false;
+    this.audio.setMusicMuffled(false);
     this.loop.last = performance.now();
   }
 
@@ -292,6 +300,7 @@ export class App {
     const t = track || (draft && Array.isArray(draft.pieces) && draft.pieces.length ? draft : { name: 'My Track', theme: 'rooftop', pieces: [{ t: 'start', x: 0, y: 0, z: 0, r: 0 }] });
     this.setMode(null);
     this.modeName = 'editor';
+    this.audio.playMusic('menu');
     this.editorInstance = new Editor(this, t);
     this.setMode(this.editorInstance);
   }
@@ -314,6 +323,8 @@ export class App {
     this.setMode(null); // disposes the race session
     this.modeName = 'editor';
     this.mode = this.editorInstance;
+    this.audio.setMusicMuffled(false);
+    this.audio.playMusic('menu');
     this.editorInstance.resume();
   }
 

@@ -1,4 +1,12 @@
 import { getSettings, onSettingsChange } from '../storage/settings.js';
+import { Music } from './Music.js';
+
+/** Engine voice per vehicle kind: pitch range, filter and loudness. */
+const ENGINES = {
+  car: { base: 46, range: 58, gear: 5, cut: 260, cutRange: 520, vol: 1 },
+  boat: { base: 34, range: 40, gear: 3, cut: 200, cutRange: 380, vol: 1.1 },
+  plane: { base: 70, range: 60, gear: 0, cut: 380, cutRange: 600, vol: 0.8 },
+};
 
 /**
  * Procedural sound effects (Web Audio) — no audio files to download or
@@ -13,9 +21,16 @@ export class Sfx {
     this.ctx = null;
     this.enabled = typeof window !== 'undefined' && !!(window.AudioContext || window.webkitAudioContext);
     this.volume = getSettings().volume;
+    this.vehicle = 'car';
+    this.wantSong = null;
+    this.muffled = false;
     onSettingsChange((key, value, all) => {
       this.volume = all.volume;
-      if (this.master) this.master.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.05);
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+      this.master.gain.setTargetAtTime(this.volume, t, 0.05);
+      this.engineBus.gain.setTargetAtTime(all.engineVolume, t, 0.05);
+      this._syncMusic();
     });
     const unlock = () => this.unlock();
     window.addEventListener('keydown', unlock, { capture: true });
@@ -28,6 +43,7 @@ export class Sfx {
     if (!this.ctx) {
       this._init();
       this._bedSynced = false;
+      this._syncMusic();
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
   }
@@ -55,22 +71,40 @@ export class Sfx {
     const bed = (this.bedGain = ctx.createGain());
     bed.gain.value = 0;
     bed.connect(this.master);
+    // Engine: a soft triangle + sine sub through a gentle low-pass, on its
+    // own bus so the "Engine sound" setting can tame (or silence) it.
+    this.engineBus = ctx.createGain();
+    this.engineBus.gain.value = getSettings().engineVolume;
+    this.engineBus.connect(bed);
     this.engineA = ctx.createOscillator();
-    this.engineA.type = 'sawtooth';
+    this.engineA.type = 'triangle';
     this.engineB = ctx.createOscillator();
-    this.engineB.type = 'square';
+    this.engineB.type = 'sine';
     this.engineFilter = ctx.createBiquadFilter();
     this.engineFilter.type = 'lowpass';
-    this.engineFilter.Q.value = 3;
+    this.engineFilter.Q.value = 0.6;
     this.engineGain = ctx.createGain();
     this.engineGain.gain.value = 0.0;
     const bGain = ctx.createGain();
-    bGain.gain.value = 0.45;
+    bGain.gain.value = 0.7;
     this.engineA.connect(this.engineFilter);
     this.engineB.connect(bGain).connect(this.engineFilter);
-    this.engineFilter.connect(this.engineGain).connect(bed);
+    this.engineFilter.connect(this.engineGain).connect(this.engineBus);
     this.engineA.start();
     this.engineB.start();
+    // Slow wobble so the note never sits perfectly still (less droning).
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 5.5;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 1.5;
+    lfo.connect(lfoGain).connect(this.engineA.frequency);
+    lfo.start();
+    this.engineLfo = lfo;
+
+    this.musicBus = ctx.createGain();
+    this.musicBus.gain.value = 1;
+    this.musicBus.connect(this.master);
+    this.music = new Music(ctx, this.musicBus);
 
     this.squeal = this._loopNoise('bandpass', 1500, 6);
     this.squeal.gain.connect(bed);
@@ -93,6 +127,34 @@ export class Sfx {
     return { src, filter: f, gain: g };
   }
 
+  /** Request a song by id (plays once audio is unlocked; null = silence). */
+  playMusic(id) {
+    this.wantSong = id;
+    this._syncMusic();
+  }
+
+  /** Quieter music behind the pause menu. */
+  setMusicMuffled(on) {
+    this.muffled = on;
+    if (this.music) this.music.setMuffled(on);
+  }
+
+  _syncMusic() {
+    if (!this.music) return;
+    const s = getSettings();
+    if (!s.music || !this.wantSong || s.musicVolume <= 0) {
+      if (this.music.songId) this.music.stop();
+      return;
+    }
+    this.music.play(this.wantSong, s.musicVolume * 0.7);
+    if (this.muffled) this.music.setMuffled(true);
+  }
+
+  /** Engine timbre for the current vehicle: 'car' | 'boat' | 'plane'. */
+  setVehicle(kind) {
+    this.vehicle = ENGINES[kind] ? kind : 'car';
+  }
+
   get ready() {
     return !!this.ctx && this.ctx.state === 'running';
   }
@@ -111,18 +173,20 @@ export class Sfx {
     if (!this.ready || !this.bedOn) return;
     const t = this.ctx.currentTime;
     const speed = Math.abs(car.speed);
+    const e = ENGINES[this.vehicle];
     // Fake gearbox: rpm climbs within each gear, drops on the shift.
     const gears = [0, 12, 24, 36, 48, 62, 80];
     let g = 1;
     while (g < gears.length - 1 && speed > gears[g]) g++;
     const lo = gears[g - 1], hi = gears[g];
-    const rpm = 0.25 + 0.75 * Math.min(1, (speed - lo) / (hi - lo));
+    const rpm = e.gear ? 0.25 + 0.75 * Math.min(1, (speed - lo) / (hi - lo)) : Math.min(1, speed / 70);
     const throttle = controls.throttle || (car.boosting ? 1 : 0);
-    const base = 48 + rpm * 70 + g * 6 + (car.grounded ? 0 : 25 * throttle);
-    this.engineA.frequency.setTargetAtTime(base, t, 0.04);
-    this.engineB.frequency.setTargetAtTime(base * 0.5, t, 0.04);
-    this.engineFilter.frequency.setTargetAtTime(500 + rpm * 1400 + throttle * 900 + (car.boosting ? 900 : 0), t, 0.05);
-    this.engineGain.gain.setTargetAtTime(0.05 + throttle * 0.07 + Math.min(1, speed / 50) * 0.03, t, 0.06);
+    const air = car.grounded || this.vehicle === 'plane' ? 0 : 12 * throttle;
+    const base = e.base + rpm * e.range + g * e.gear + air;
+    this.engineA.frequency.setTargetAtTime(base, t, 0.06);
+    this.engineB.frequency.setTargetAtTime(base * 0.5, t, 0.06);
+    this.engineFilter.frequency.setTargetAtTime(e.cut + rpm * e.cutRange + throttle * 180 + (car.boosting ? 300 : 0), t, 0.08);
+    this.engineGain.gain.setTargetAtTime((0.05 + throttle * 0.05 + Math.min(1, speed / 50) * 0.04) * e.vol, t, 0.1);
     const slip = car.grounded ? (car.drifting ? 0.6 + car.slip : Math.max(0, car.slip - 0.15) * 2) : 0;
     const skid = car.grounded && controls.brake && car.forwardSpeed > 12 ? 0.35 : 0;
     this.squeal.gain.gain.setTargetAtTime(Math.min(0.12, (slip + skid) * 0.1), t, 0.05);

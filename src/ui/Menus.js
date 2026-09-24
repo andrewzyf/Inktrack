@@ -221,12 +221,17 @@ export class Menus {
     const select = (key, label, options) => `
       <label class="setting"><span>${label}</span>
         <select data-setting="${key}">${options.map(([v, l]) => `<option value="${v}" ${s[key] === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`;
+    const slider = (key, label, hint = '') => `
+      <label class="setting"><span>${label}${hint ? `<small>${hint}</small>` : ''}</span><input type="range" min="0" max="1" step="0.05" value="${s[key]}" data-setting="${key}"></label>`;
     return `
       <section class="screen settings">
         <header class="screen-head"><button class="btn btn-small btn-back" data-action="back">◀ BACK</button><h2>SETTINGS</h2></header>
         <div class="panel settings-panel">
           ${toggle('ghost', 'Ghost car', 'race your best run')}
-          <label class="setting"><span>Sound volume</span><input type="range" min="0" max="1" step="0.05" value="${s.volume}" data-setting="volume"></label>
+          ${slider('volume', 'Master volume')}
+          ${slider('musicVolume', 'Music')}
+          ${slider('engineVolume', 'Engine sound', 'the motor hum')}
+          ${toggle('music', 'Play music')}
           ${select('quality', 'Graphics', [['auto', 'Auto'], ['low', 'Low (fast)'], ['medium', 'Medium'], ['high', 'High']])}
           ${select('steering', 'Touch steering', [['zones', 'Touch zones'], ['tilt', 'Tilt (gyro)']])}
           ${toggle('autoGas', 'Auto-accelerate', 'touch: gas is always on')}
