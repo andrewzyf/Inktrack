@@ -38,3 +38,53 @@ are non-colliding).
 sideways speed into forward speed and gained energy in turns (75 m/s against a
 58 m/s top speed). Replaced with a speed-conserving redirect; regression test
 added.
+
+## Phase 2 — Core driving physics
+
+**Built** (`src/physics/CarPhysics.js`, all constants in `src/config/physics.js`)
+- Acceleration curve (speed → accel table), soft top speed, strong brakes,
+  reverse, rolling + quadratic air drag.
+- **Drift**: hold Space/Shift while steering above 43 km/h. Grip drops, the car
+  rotates into the slide (steer into it to tighten, counter-steer to widen),
+  and a **boost meter** charges with slip angle. Releasing drift converts the
+  meter into up to 1.4 s of boost (+30 m/s², cap 259 km/h). Tiny drifts
+  (< 20 % meter) give nothing; grip blends back over 0.3 s so exits don't snap.
+- Momentum: velocity follows road curvature without losing speed (loops,
+  dips), landings absorb only the into-road component, heavy landings raise a
+  `land` event. Air: steering yaws, the nose gently follows the flight path;
+  the chassis eases parallel to the road just before touchdown.
+- **Loops**: loop triangles are tagged `GUIDED` with the road direction, so the
+  car follows the loop's sideways lane-shift without steering. Too slow and
+  the car peels off at the top.
+- Walls (3 body spheres): push-out, low restitution, scrape friction, nose
+  swings parallel to the wall. Body spheres stop the roof sinking into the
+  road and flag `flipped` for auto-respawn. Continuous ray stops tunnelling.
+- Surfaces: `ice` (14 % grip, weaker brakes) and `boost` pads.
+- `scripts/physics-report.mjs` prints handling numbers for the current tuning.
+
+**Current feel numbers**: 0–100 km/h 1.6 s, 0–200 km/h 5.7 s, top speed
+211 km/h (259 boosted), 200→0 braking 1.3 s / 36 m, grip-turn radius 11 m at
+54 km/h and 33 m at 162 km/h, a 1.5 s drift at 144 km/h reaches ~37° slip and
+88 % meter.
+
+**Verified** — `tests/phase2-physics.test.js` (13 tests): drift slides + charges
++ boosts, boost exceeds top speed then bleeds off, no drift below min speed,
+drifting keeps > 100 km/h through a 180°; kicker jump flies and lands; loop
+completed upside-down at speed, peel-off when slow, no steering needed when
+entered at an angle; walls stop and scrape; ice slip > 3× road; boost pad fires
+once; no tunnelling at 150 m/s; roof-landing detection.
+`scripts/verify-phase2.mjs` repeats the jump → drift → boost chain in the
+browser playground.
+
+**Trade-offs / notes**
+- Holding throttle does *not* pitch the car in the air (first attempt did, and
+  the car nose-dived onto its roof). Manual pitch exists behind
+  `air.pitchControl` if you want PolyTrack-style air control.
+- Loop guidance is an arcade assist. Turn it down with
+  `ground.guideCentering`, or remove `guided` from the loop piece if you want
+  loops to need steering.
+
+**Needs your input:** PolyTrack's exact numbers aren't published, so this tune
+is my best guess at its feel (quick launch, strong brakes, momentum through
+jumps). Try it in the browser and tell me what feels off. The usual knobs are
+`engine.accelCurve`, `steering.maxYawRate`, `drift.grip` and `drift.yawBase`.

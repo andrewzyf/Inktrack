@@ -6,8 +6,12 @@ import { CarPhysics } from './physics/CarPhysics.js';
 import { Input } from './input/Input.js';
 import { GameLoop } from './core/GameLoop.js';
 import { ChaseCamera } from './rendering/ChaseCamera.js';
+import { createPath, linePath, loopPath } from './tracks/paths.js';
+import { addRoadCollision } from './tracks/sweep.js';
+import { SURFACE } from './physics/CollisionWorld.js';
+import { collisionDebugGeometry } from './physics/debugMesh.js';
 
-// ── Phase 1 sandbox: placeholder box car on a flat plane ──────────────────
+// ── Phase 2 physics playground: flat plane + ramp, loop, walls, ice, boost pad ──
 const canvas = document.getElementById('game');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -38,7 +42,18 @@ for (let x = -SIZE / 2; x < SIZE / 2; x += 10) {
     world.addTriangle(a, c, d, DRIVABLE);
   }
 }
+// Playground features (rendered from their collision triangles for now).
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+addRoadCollision(world, linePath(V(0, 0.02, 20), V(0, 0.02, 30)), { walls: [false, false], surface: SURFACE.BOOST });
+addRoadCollision(world, createPath((t, o) => o.set(0, 2.2 * t * t, 60 + t * 10)), { walls: [false, false], width: 10, samples: 16 });
+addRoadCollision(world, linePath(V(-40, 0, -40), V(-40, 0, 0)), { walls: [true, true] });
+addRoadCollision(world, loopPath(V(-40, 0, 0), V(0, 0, 1), V(1, 0, 0), 9, 10), { samples: 96, guided: true });
+addRoadCollision(world, linePath(V(-30, 0, 0), V(-30, 0, 60)), { walls: [true, true] });
+addRoadCollision(world, linePath(V(40, 0.02, 0), V(40, 0.02, 250)), { walls: [true, true], width: 12 });
+addRoadCollision(world, linePath(V(110, 0.02, 0), V(110, 0.02, 80)), { walls: [false, false], width: 60, surface: SURFACE.ICE });
 world.build();
+const debugMesh = new THREE.Mesh(collisionDebugGeometry(world), new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 }));
+scene.add(debugMesh);
 
 // Placeholder car: a box body plus a nose marker so heading is readable.
 const carMesh = new THREE.Group();
@@ -83,14 +98,16 @@ const loop = new GameLoop({
     prevPos.copy(car.position);
     prevQuat.copy(car.quaternion);
     car.step(dt, input.sample());
-    if (car.position.y < -30) car.reset(spawnPos, new THREE.Quaternion());
+    for (const e of car.drainEvents()) console.log('event', e.type, e.value.toFixed(2));
+    if (car.position.y < -30 || car.flippedTime > 1.5) car.reset(spawnPos, new THREE.Quaternion());
   },
   frame(dt, alpha) {
     carMesh.position.lerpVectors(prevPos, car.position, alpha);
     carMesh.quaternion.slerpQuaternions(prevQuat, car.quaternion, alpha);
-    chase.update(dt, carMesh.position, carMesh.quaternion, { speed: car.speed, grounded: car.grounded, velocity: car.velocity });
+    chase.update(dt, carMesh.position, carMesh.quaternion, { speed: car.speed, grounded: car.grounded, velocity: car.velocity, boosting: car.boosting });
     renderer.render(scene, camera);
-    hud.textContent = `${Math.round(Math.abs(car.speed) * 3.6)} km/h  ·  ${loop.fps.toFixed(0)} fps`;
+    const meter = '█'.repeat(Math.round(car.driftMeter * 10)).padEnd(10, '·');
+    hud.textContent = `${Math.round(Math.abs(car.speed) * 3.6)} km/h · drift [${meter}] · ${car.boosting ? 'BOOST ' : ''}${car.grounded ? '' : 'AIR '}${car.surface} · ${loop.fps.toFixed(0)} fps`;
   },
 });
 
@@ -106,4 +123,5 @@ resize();
 loop.start();
 
 // Debug handle for automated verification.
-window.__INKTRACK__ = { car, input, loop, THREE };
+window.__INKTRACK__ = { car, input, loop, THREE, physics: PHYSICS };
+window.INKTRACK = { physics: PHYSICS };

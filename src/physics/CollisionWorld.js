@@ -10,6 +10,8 @@ import { Vector3 } from 'three';
 /** Triangle flags */
 export const DRIVABLE = 1; // road surfaces the wheels can stand on
 export const WALL = 2; // barriers, pillars, undersides
+/** Drivable triangles whose road direction steers the car (loops), see setGuide(). */
+export const GUIDED = 4;
 export const ANY = DRIVABLE | WALL;
 
 /** Surface types for drivable triangles */
@@ -38,6 +40,7 @@ export class RayHit {
     this.point = new Vector3();
     this.normal = new Vector3(); // interpolated (smooth) normal
     this.faceNormal = new Vector3();
+    this.guide = new Vector3(); // road direction on GUIDED triangles
     this.flags = 0;
     this.surface = 0;
     this.triangle = -1;
@@ -58,6 +61,7 @@ export class CollisionWorld {
     this._nrm = [];
     this._flags = [];
     this._surface = [];
+    this._guides = [];
     this.count = 0;
     this.grid = new Map();
     this.built = false;
@@ -85,6 +89,16 @@ export class CollisionWorld {
     this._surface.push(surface);
     this.built = false;
     return this.count++;
+  }
+
+  /**
+   * Mark triangle `t` as GUIDED: while the car's wheels are on it, its heading
+   * is carried along `tangent` (used by loops so they need no steering).
+   */
+  setGuide(t, tangent) {
+    if (t < 0) return;
+    this._flags[t] |= GUIDED;
+    this._guides.push(t, tangent.x, tangent.y, tangent.z);
   }
 
   /** Add an indexed or non-indexed triangle list (positions as flat arrays). */
@@ -116,6 +130,13 @@ export class CollisionWorld {
     this.flags = new Uint8Array(this._flags);
     this.surface = new Uint8Array(this._surface);
     this.faceN = new Float32Array(this.count * 3);
+    this.guide = new Float32Array(this.count * 3);
+    for (let i = 0; i < this._guides.length; i += 4) {
+      const t = this._guides[i];
+      this.guide[t * 3] = this._guides[i + 1];
+      this.guide[t * 3 + 1] = this._guides[i + 2];
+      this.guide[t * 3 + 2] = this._guides[i + 3];
+    }
     this.stamp = new Uint32Array(this.count);
     this.queryId = 0;
     this.grid.clear();
@@ -153,7 +174,7 @@ export class CollisionWorld {
           }
     }
     for (const [k, list] of cells) this.grid.set(k, Int32Array.from(list));
-    this._pos = this._nrm = this._flags = this._surface = null;
+    this._pos = this._nrm = this._flags = this._surface = this._guides = null;
     this.built = true;
     return this;
   }
@@ -266,6 +287,7 @@ export class CollisionWorld {
       N[o + 2] * w + N[o + 5] * u + N[o + 8] * v,
     ).normalize();
     out.faceNormal.fromArray(this.faceN, t * 3);
+    if (out.flags & GUIDED) out.guide.fromArray(this.guide, t * 3);
   }
 
   /**
