@@ -1,0 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { buildTrack } from '../../src/tracks/TrackBuilder.js';
+import { decoratorFor } from '../../src/tracks/decor.js';
+import { hashString } from '../../src/core/random.js';
+const t = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+const seed = hashString(t.id || t.name || 'custom');
+const b = buildTrack(t, { decorate: decoratorFor('rooftop', String(seed)) });
+const signs = b.geo.entries().filter((e) => e.material === 'signs');
+const us = [];
+for (const { builder } of signs) for (let i = 0; i < builder.uv.length; i += 8) us.push(`${Math.floor(builder.uv[i] * 4)},${Math.floor(builder.uv[i + 1] * 2)}`);
+console.log(t.id, us.join(' '));

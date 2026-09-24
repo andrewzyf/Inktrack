@@ -281,3 +281,46 @@ distinct in road style, sky and palette. Browser screenshots of each.
 - Frost decor started at 316k triangles. Low-poly open cones/trunks, fewer
   props per cell and no small props beyond 4 cells brought it to 109k
   (Ruins 87k, Rooftop 59k).
+
+## Phase 7 — Track editor
+
+**Built** (`src/editor/`)
+- `Editor.js`: editor mode. Grid placement at a chosen height level, rotate,
+  erase, ice paint, undo/redo (200 steps), theme and name. **Auto-snap**:
+  hover next to an open road end and the selected piece rotates and lifts
+  itself to connect (slopes snap to the right level), so building on a phone
+  is mostly tap-tap-tap. `R` or the ROTATE button overrides until you move
+  on. Camera: drag to pan, right-drag to orbit, wheel to zoom, WASD/Q/E, and
+  on touch one-finger pan, pinch zoom and two-finger twist.
+- `placement.js`: the pure snap/overlap/erase rules (unit-tested).
+- `EditorView.js`: pieces are rendered as **InstancedMeshes** (one per piece
+  type × surface × material, with ink outlines), so a 200-piece track stays
+  at a few dozen draw calls and edits are instant. Also draws the level
+  grid, cursor cell, green/red placement preview and red erase highlight.
+- `EditorUI.js` + `pieceIcons.js`: comic toolbar (MENU, name, theme, undo,
+  redo, SAVE, LOAD, EXPORT, IMPORT, NEW, ▶ TEST DRIVE), a palette with inked
+  SVG icons, and a tool column (ERASE / ROTATE / level ▲▼ / ICE / SNAP). The
+  status line shows START ✓, FINISH connected ✓ and CP counts. Floating S /
+  1…n / F labels show the driving order. The LOAD dialog lists saved tracks
+  and lets you copy a built-in track as a "Remix" template.
+- Persistence (`storage/customTracks.js`): localStorage save/list/delete, a
+  continuously saved **draft**, and a shareable JSON format
+  (`{ format: "inktrack-track", version: 1, name, theme, pieces }`) with
+  strict validation on import (known pieces, integer grid values, size cap,
+  sanitised names).
+- **Test drive** suspends the editor (history intact), races the track with
+  ghost + leaderboard, and returns via pause → BACK TO EDITOR or the
+  results screen's EDITOR button. Saved tracks appear in RACE → YOUR TRACKS.
+
+**Verified**
+- `tests/phase7-editor.test.js` (8 tests): local geometry for every piece;
+  auto-snapped chains form a connected track the autopilot can finish; slope
+  level snapping; overlap blocking (and bridges above); open ends and erase
+  picking; save/list/reload/rename/delete; export → import round-trip; and
+  rejection of bad or hostile files.
+- Browser (`scripts/verify-phase7.mjs`): 18 pieces placed with **real
+  palette and canvas clicks** (including a jump), named and saved, page
+  reloaded, re-opened from LOAD (19 pieces intact), exported (a
+  `Verify-Loop.inktrack.json` download) and re-imported, test-driven to the
+  finish (8.07 s, 0 respawns), back in the editor with undo history, and
+  listed in the track select screen.

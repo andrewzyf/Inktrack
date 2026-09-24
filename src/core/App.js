@@ -12,6 +12,9 @@ import { STARTER_TRACKS } from '../tracks/starterTracks.js';
 import { getTheme } from '../tracks/themes.js';
 import { trackKey, getRecords, getBest, submitTime, saveGhost, loadGhost, clearRecords } from '../storage/records.js';
 import { getSettings } from '../storage/settings.js';
+import { readJSON } from '../storage/storage.js';
+import { listCustomTracks } from '../storage/customTracks.js';
+import { Editor } from '../editor/Editor.js';
 
 /**
  * Top-level state machine. Owns the renderer, the shared Stage, input, the
@@ -51,6 +54,7 @@ export class App {
         if (this.mode) this.mode.frame(this.paused ? 0 : dt, this.paused ? 1 : alpha);
       },
     });
+    this.customTracks = () => listCustomTracks();
     this.input.onAction((action) => this.onAction(action));
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.modeName === 'race' && this.mode?.race.state === 'racing') this.pause();
@@ -62,6 +66,8 @@ export class App {
     if (p.has('playground')) {
       this.modeName = 'playground';
       this.setMode(new Playground({ stage: this.stage, input: this.input }));
+    } else if (p.has('editor')) {
+      this.openEditor();
     } else if (p.has('track') || p.has('autopilot')) {
       const ap = p.get('autopilot');
       this.startRace(p.get('track') || STARTER_TRACKS[0].id, { autopilot: p.has('autopilot'), aggression: ap ? parseFloat(ap) || 1 : 1 });
@@ -107,6 +113,10 @@ export class App {
   showMenu(screen = 'title') {
     this.paused = false;
     this.inTestDrive = false;
+    if (this.editorInstance) {
+      if (this.mode !== this.editorInstance) this.editorInstance.dispose();
+      this.editorInstance = null;
+    }
     this.hud.show(false);
     this.impacts.clear();
     // Attract mode: the autopilot laps the built-in tracks behind the menus.
@@ -211,8 +221,44 @@ export class App {
     this.loop.last = performance.now();
   }
 
-  openEditor() {
-    this.impacts.show('SOON!', 'info', { size: 10, sub: 'editor arrives in phase 7' });
+  // ── editor ──────────────────────────────────────────────────────────
+  /** Open the editor on `track`, the saved draft, or a fresh track. */
+  openEditor(track = null) {
+    this.paused = false;
+    this.menus.hide();
+    this.hud.show(false);
+    this.impacts.clear();
+    const draft = readJSON('editor:draft');
+    const t = track || (draft && Array.isArray(draft.pieces) && draft.pieces.length ? draft : { name: 'My Track', theme: 'rooftop', pieces: [{ t: 'start', x: 0, y: 0, z: 0, r: 0 }] });
+    this.setMode(null);
+    this.modeName = 'editor';
+    this.editorInstance = new Editor(this, t);
+    this.setMode(this.editorInstance);
+  }
+
+  /** Race the editor's track right now; the editor waits in the background. */
+  testDrive(editor) {
+    editor.suspend();
+    this.mode = null; // don't dispose the editor
+    this.inTestDrive = true;
+    this.editorInstance = editor;
+    const data = editor.trackData();
+    this.startRace({ ...data, ref: 'test-drive', builtIn: false }, { autopilot: this.params.has('autopilot') });
+  }
+
+  backToEditor() {
+    if (!this.editorInstance) return this.openEditor();
+    this.menus.hide();
+    this.paused = false;
+    this.inTestDrive = false;
+    this.setMode(null); // disposes the race session
+    this.modeName = 'editor';
+    this.mode = this.editorInstance;
+    this.editorInstance.resume();
+  }
+
+  onMenuAction(action) {
+    if (action === 'back-to-editor') this.backToEditor();
   }
 
   onAction(action) {
@@ -226,7 +272,7 @@ export class App {
       if (this.paused || this.menus.visible) return;
       if (action === 'restart') return this.restartRace();
     }
-    if (this.modeName === 'menu') return;
+    if (this.modeName === 'menu' || this.modeName === 'editor') return; // editor has its own keys
     if (this.mode && this.mode.onAction) this.mode.onAction(action);
   }
 }

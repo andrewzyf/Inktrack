@@ -114,7 +114,9 @@ function neonSign(geo, x, y, z, ry, rand, big = false) {
   place(b, G.box, x, y + h / 2 + 1.6, z, 0x2b2640, { sx: w + 0.5, sy: h + 0.5, sz: 0.3, ry });
   const dx = Math.cos(ry), dz = -Math.sin(ry);
   for (const s of [-1, 1]) place(b, G.box, x + dx * s * w * 0.35, y + 0.8, z + dz * s * w * 0.35, 0x2b2640, { sx: 0.25, sy: 1.6, sz: 0.25, ry });
-  const cell = Math.floor(rand() * SIGN_CELLS);
+  // Cycle through the atlas (with a random stride) so nearby signs differ.
+  geo.signIndex = ((geo.signIndex ?? Math.floor(rand() * SIGN_CELLS)) + 1 + Math.floor(rand() * 2)) % SIGN_CELLS;
+  const cell = geo.signIndex;
   const u0 = (cell % 4) / 4, v0 = cell < 4 ? 0.5 : 0;
   const face = new PlaneGeometry(w, h);
   const uv = face.getAttribute('uv');

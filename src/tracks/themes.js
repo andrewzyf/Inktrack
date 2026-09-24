@@ -5,7 +5,7 @@
 export const THEMES = {
   rooftop: {
     id: 'rooftop',
-    name: 'Rooftop Run',
+    name: 'City Rooftops',
     roadStyle: 'rooftop',
     light: { direction: [-0.55, 0.62, 0.4], midTint: 0xd9c9e6, shadowTint: 0x8d77b6, ink: 0x6a4f93 },
     fog: { color: 0xf7a585, near: 170, far: 560 },
@@ -25,7 +25,7 @@ export const THEMES = {
   },
   ruins: {
     id: 'ruins',
-    name: 'Ruin Rally',
+    name: 'Jungle Ruins',
     roadStyle: 'ruins',
     light: { direction: [0.5, 0.75, -0.3], midTint: 0xd8e3b8, shadowTint: 0x7f9a6a, ink: 0x4f6b3f },
     fog: { color: 0xd9efb8, near: 150, far: 520 },
@@ -45,7 +45,7 @@ export const THEMES = {
   },
   frost: {
     id: 'frost',
-    name: 'Frost Peak',
+    name: 'Snowy Peaks',
     roadStyle: 'frost',
     light: { direction: [0.3, 0.7, 0.55], midTint: 0xdce6f7, shadowTint: 0x93a8d6, ink: 0x5d77b8 },
     fog: { color: 0xe6f0ff, near: 140, far: 500 },

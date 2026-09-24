@@ -262,7 +262,7 @@
 }
 .section-title { font-size: 32px; align-self: flex-start; color: var(--cyan); }
 
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 22px; width: 100%; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 22px; width: 100%; }
 .card {
   background: var(--paper);
   border: var(--border) solid var(--ink);
@@ -336,4 +336,140 @@ td.empty { font-family: var(--font-body); font-weight: 700; text-align: center; 
   .menu-buttons { gap: 8px; }
   .screen { gap: 10px; }
   .btn-big { font-size: 28px; padding: 8px 26px 6px; }
+}
+
+/* ── Editor ──────────────────────────────────────────────────────────── */
+.editor-ui { position: absolute; inset: 0; pointer-events: none; }
+.editor-ui > * { pointer-events: auto; }
+.editor-ui .ed-labels, .editor-ui .ed-toast, .editor-ui .ed-status, .editor-ui .ed-help { pointer-events: none; }
+.ed-top {
+  position: absolute;
+  top: calc(8px + var(--safe-t));
+  left: calc(8px + var(--safe-l));
+  right: calc(8px + var(--safe-r));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ed-spacer { flex: 1; }
+.ed-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.ed-name, .ed-theme {
+  font-family: var(--font-comic);
+  font-size: 20px;
+  letter-spacing: 1px;
+  border: 3px solid var(--ink);
+  border-radius: 6px;
+  padding: 5px 10px 3px;
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  min-height: 38px;
+}
+.ed-name { width: 190px; }
+.ed-test { font-size: 22px; padding: 8px 16px 6px; }
+.ed-tools {
+  position: absolute;
+  right: calc(8px + var(--safe-r));
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+.tool, .piece {
+  font-family: var(--font-comic);
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  border-radius: 8px;
+  box-shadow: 3px 3px 0 var(--ink);
+  cursor: pointer;
+  touch-action: manipulation;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 6px 3px;
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: var(--ink);
+}
+.tool svg { width: 30px; height: 30px; }
+.tool.active, .piece.active { background: var(--yellow); transform: translate(-1px, -2px); box-shadow: 4px 5px 0 var(--ink); }
+.tool:active, .piece:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+.tool-level { text-align: center; background: var(--ink); color: var(--paper); border-radius: 6px; padding: 3px 0; line-height: 1; }
+.tool-level small { display: block; font-size: 11px; opacity: 0.8; }
+.tool-level b { font-size: 24px; font-weight: 400; }
+.ed-palette {
+  position: absolute;
+  left: calc(8px + var(--safe-l));
+  right: calc(8px + var(--safe-r));
+  bottom: calc(8px + var(--safe-b));
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 4px 8px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  justify-content: safe center;
+}
+.piece { flex: none; width: 76px; }
+.piece svg { width: 44px; height: 44px; }
+.piece span { white-space: nowrap; font-size: 12px; }
+.ed-status {
+  position: absolute;
+  left: calc(8px + var(--safe-l));
+  bottom: calc(100px + var(--safe-b));
+  display: flex;
+  gap: 12px;
+  font-size: 16px;
+  padding: 5px 10px 3px;
+  flex-wrap: wrap;
+  max-width: calc(100% - 120px);
+}
+.ed-status .ok { color: #1f8f3a; }
+.ed-status .bad { color: #d62839; }
+.ed-help { position: absolute; left: calc(8px + var(--safe-l)); top: calc(62px + var(--safe-t)); font-family: var(--font-body); font-size: 13px; max-width: 520px; padding: 6px 10px; opacity: 0.92; }
+.ed-help b { font-family: var(--font-comic); font-weight: 400; letter-spacing: 0.5px; }
+.ed-labels { position: absolute; inset: 0; overflow: hidden; }
+.ed-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 22px;
+  min-width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  background: var(--yellow);
+  border: 3px solid var(--ink);
+  border-radius: 50%;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.ed-label.start { background: var(--green); }
+.ed-label.finish { background: var(--paper); }
+.ed-toast { position: absolute; left: 50%; top: calc(70px + var(--safe-t)); transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; width: min(520px, 92vw); }
+.toast { font-family: var(--font-body); font-weight: 700; font-size: 16px; background: var(--paper); border: 3px solid var(--ink); border-radius: 8px; box-shadow: 4px 4px 0 var(--ink); padding: 8px 14px; animation: toast-in 0.25s cubic-bezier(0.3, 1.6, 0.5, 1); text-align: center; }
+.toast.good { background: #d8ffd0; }
+.toast.bad { background: #ffd6da; }
+@keyframes toast-in { from { transform: scale(0.6); opacity: 0; } }
+.ed-dialog { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(20, 10, 40, 0.55); padding: 16px; }
+.dlg-box { width: min(520px, 100%); max-height: 85vh; overflow-y: auto; padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; }
+.dlg-box h3 { margin: 6px 0 0; font-size: 24px; }
+.dlg-box ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dlg-box li { display: flex; align-items: center; gap: 8px; border-bottom: 2px dashed rgba(20, 16, 24, 0.3); padding: 4px 0; }
+.dlg-box li.empty { font-family: var(--font-body); font-weight: 700; }
+.dlg-name { flex: 1; font-size: 20px; }
+.dlg-name small { display: block; font-family: var(--font-body); font-size: 13px; font-weight: 700; opacity: 0.7; }
+
+@media (max-width: 760px), (max-height: 520px) {
+  .ed-actions .btn-small { font-size: 15px; padding: 5px 8px 3px; min-height: 34px; }
+  .ed-name { width: 130px; font-size: 16px; }
+  .ed-theme { font-size: 15px; }
+  .ed-test { font-size: 18px; padding: 6px 10px 4px; }
+  .tool { padding: 3px 4px 2px; font-size: 11px; }
+  .tool svg { width: 24px; height: 24px; }
+  .piece { width: 64px; }
+  .piece svg { width: 36px; height: 36px; }
+  .piece span { font-size: 10px; }
+  .ed-status { font-size: 13px; gap: 8px; bottom: calc(84px + var(--safe-b)); }
 }

@@ -9,7 +9,7 @@ import { facadeTexture, signTexture, bannerTexture } from './textures.js';
  */
 const materialCache = new Map();
 
-function materialsFor(stage, theme) {
+export function materialsFor(stage, theme) {
   const key = theme.id;
   if (materialCache.has(key)) return materialCache.get(key);
   const mats = {
