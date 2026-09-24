@@ -1,0 +1,16 @@
+import { launch, sleep } from '../pw.mjs';
+const { browser, page, logs } = await launch({ mobile: true, width: 390, height: 844 });
+const cdp = await page.context().newCDPSession(page);
+await page.goto('http://localhost:4173/?editor');
+await page.waitForFunction(() => window.__INKTRACK__?.modeName === 'editor');
+await sleep(400);
+const cell = await page.evaluate(() => { const a = window.__INKTRACK__, ed = a.mode, cam = a.renderer.camera; ed.target.set(0, 0, 10); ed._updateCamera(); const v = new (cam.position.constructor)(0, 0, 10).project(cam); return [((v.x + 1) / 2) * a.renderer.width, ((1 - v.y) / 2) * a.renderer.height]; });
+console.log('cell px', cell, await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e.tagName + '.' + e.className; }, cell));
+await page.evaluate(() => { for (const t of ['pointerdown', 'pointerup', 'pointercancel']) window.addEventListener(t, (e) => console.log(t, e.pointerType, Math.round(e.clientX), Math.round(e.clientY), 'hover', JSON.stringify(window.__INKTRACK__.mode.hoverCell), 'cand', JSON.stringify(window.__INKTRACK__.mode.candidate)), true); });
+await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cell[0], y: cell[1], id: 1 }] });
+await sleep(60);
+await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+await sleep(200);
+console.log('pieces', await page.evaluate(() => window.__INKTRACK__.mode.track.pieces.length));
+console.log(logs.join('\n'));
+await browser.close();

@@ -26,9 +26,9 @@ export class Input {
     this.sources = this.sources.filter((s) => s !== source);
   }
 
+  /** Keyboard actions (reset, pause, restart…). Touch buttons are wired by the App. */
   onAction(fn) {
-    const offs = this.sources.filter((s) => s.onAction).map((s) => s.onAction(fn));
-    return () => offs.forEach((off) => off());
+    return this.keyboard.onAction(fn);
   }
 
   sample() {

@@ -45,6 +45,8 @@ export class Menus {
       if (t.dataset.setting) {
         const v = t.type === 'checkbox' ? t.checked : t.type === 'range' ? parseFloat(t.value) : t.value;
         setSetting(t.dataset.setting, v);
+        // iOS only grants motion sensors from a user gesture — this change event is one.
+        if (t.dataset.setting === 'steering' && v === 'tilt') this.app.touch?.requestTiltPermission();
       }
     });
     window.addEventListener('keydown', (e) => this._onKey(e));

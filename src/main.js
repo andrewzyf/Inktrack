@@ -4,6 +4,10 @@ import './ui/ui.css';
 import { App } from './core/App.js';
 import { PHYSICS } from './config/physics.js';
 
+// Safari ignores user-scalable=no; stop pinch-zoom gestures on the game itself.
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
+
 async function boot() {
   // Canvas-drawn textures (signs, banners) need the comic font ready.
   try {

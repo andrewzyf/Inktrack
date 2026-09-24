@@ -18,20 +18,23 @@ export class EditorUI {
     this.el.className = 'editor-ui';
     this.el.innerHTML = `
       <header class="ed-top">
-        <button class="btn btn-small" data-ed="exit" title="Back to menu (Esc)">◀ MENU</button>
+        <button class="btn btn-small" data-ed="exit" title="Back to menu (Esc)">◀<span class="wide-only"> MENU</span></button>
         <input class="ed-name" maxlength="40" aria-label="Track name" spellcheck="false">
         <select class="ed-theme" aria-label="Theme">${Object.values(THEMES).map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
         <span class="ed-spacer"></span>
-        <div class="ed-actions">
-          <button class="btn btn-small" data-ed="undo" title="Undo (Ctrl+Z)">↶</button>
-          <button class="btn btn-small" data-ed="redo" title="Redo (Ctrl+Y)">↷</button>
-          <button class="btn btn-small" data-ed="save" title="Save (Ctrl+S)">SAVE</button>
-          <button class="btn btn-small" data-ed="load">LOAD</button>
-          <button class="btn btn-small" data-ed="export" title="Download as a .json file">EXPORT</button>
-          <button class="btn btn-small" data-ed="import" title="Open a .json track file">IMPORT</button>
-          <button class="btn btn-small" data-ed="new">NEW</button>
+        <button class="btn btn-small" data-ed="undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+        <button class="btn btn-small" data-ed="redo" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>
+        <div class="ed-file">
+          <button class="btn btn-small ed-file-toggle" data-ed="file" aria-haspopup="true">FILE ▾</button>
+          <div class="ed-file-items">
+            <button class="btn btn-small" data-ed="save" title="Save (Ctrl+S)">SAVE</button>
+            <button class="btn btn-small" data-ed="load">LOAD</button>
+            <button class="btn btn-small" data-ed="export" title="Download as a .json file">EXPORT</button>
+            <button class="btn btn-small" data-ed="import" title="Open a .json track file">IMPORT</button>
+            <button class="btn btn-small" data-ed="new">NEW</button>
+          </div>
         </div>
-        <button class="btn btn-yellow ed-test" data-ed="test" title="Test drive (T)">▶ TEST DRIVE</button>
+        <button class="btn btn-yellow ed-test" data-ed="test" title="Test drive (T)">▶ TEST<span class="wide-only"> DRIVE</span></button>
       </header>
       <aside class="ed-tools">
         <button class="tool" data-ed="erase" title="Erase tool (X / Delete)">${TOOL_ICONS.erase}<span>ERASE</span></button>
@@ -89,7 +92,9 @@ export class EditorUI {
 
   command(cmd) {
     const ed = this.editor;
+    if (cmd !== 'file') this.q('.ed-file').classList.remove('open');
     switch (cmd) {
+      case 'file': return this.q('.ed-file').classList.toggle('open');
       case 'exit': return this.exit();
       case 'undo': return ed.undo();
       case 'redo': return ed.redo();

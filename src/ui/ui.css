@@ -353,7 +353,9 @@ td.empty { font-family: var(--font-body); font-weight: 700; text-align: center; 
   flex-wrap: wrap;
 }
 .ed-spacer { flex: 1; }
-.ed-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.ed-file { position: relative; }
+.ed-file-toggle { display: none; }
+.ed-file-items { display: flex; gap: 6px; }
 .ed-name, .ed-theme {
   font-family: var(--font-comic);
   font-size: 20px;
@@ -461,10 +463,31 @@ td.empty { font-family: var(--font-body); font-weight: 700; text-align: center; 
 .dlg-name { flex: 1; font-size: 20px; }
 .dlg-name small { display: block; font-family: var(--font-body); font-size: 13px; font-weight: 700; opacity: 0.7; }
 
+@media (max-width: 1100px) {
+  .ed-file-toggle { display: inline-block; }
+  .ed-file-items {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    flex-direction: column;
+    background: var(--paper);
+    border: 3px solid var(--ink);
+    border-radius: 8px;
+    box-shadow: 5px 5px 0 var(--ink);
+    padding: 8px;
+    z-index: 5;
+    min-width: 130px;
+  }
+  .ed-file.open .ed-file-items { display: flex; }
+}
 @media (max-width: 760px), (max-height: 520px) {
-  .ed-actions .btn-small { font-size: 15px; padding: 5px 8px 3px; min-height: 34px; }
-  .ed-name { width: 130px; font-size: 16px; }
-  .ed-theme { font-size: 15px; }
+  .wide-only { display: none; }
+  .ed-top .btn-small { font-size: 15px; padding: 5px 8px 3px; min-height: 36px; }
+  .ed-name { width: auto; flex: 1 1 90px; min-width: 70px; font-size: 16px; }
+  .ed-theme { font-size: 14px; max-width: 120px; }
+  .ed-top { gap: 6px; }
+  .ed-spacer { display: none; }
   .ed-test { font-size: 18px; padding: 6px 10px 4px; }
   .tool { padding: 3px 4px 2px; font-size: 11px; }
   .tool svg { width: 24px; height: 24px; }
@@ -472,4 +495,102 @@ td.empty { font-family: var(--font-body); font-weight: 700; text-align: center; 
   .piece svg { width: 36px; height: 36px; }
   .piece span { font-size: 10px; }
   .ed-status { font-size: 13px; gap: 8px; bottom: calc(84px + var(--safe-b)); }
+}
+
+/* ── Touch controls ──────────────────────────────────────────────────── */
+body.touch-device, body.touch-device * { -webkit-touch-callout: none; }
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  touch-action: none;
+  --pad: min(24vw, 21vh, 118px);
+  --gas: min(26vw, 23vh, 124px);
+  --small: min(19vw, 17vh, 92px);
+}
+.touch-controls > * { pointer-events: auto; touch-action: none; }
+.tc-steer {
+  position: absolute;
+  left: calc(12px + var(--safe-l));
+  bottom: calc(16px + var(--safe-b));
+  display: flex;
+  gap: 10px;
+}
+.tc-zone, .tc-btn, .tc-tilt {
+  display: grid;
+  place-items: center;
+  background: rgba(255, 248, 231, 0.78);
+  border: 4px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-family: var(--font-comic);
+  color: var(--ink);
+  transition: transform 0.05s, background 0.05s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tc-zone { width: var(--pad); height: calc(var(--pad) * 1.05); border-radius: 18px; }
+.tc-zone svg { width: 46%; height: 46%; fill: var(--ink); }
+.tc-zone.on, .tc-btn.on { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--ink); }
+.tc-zone.on { background: var(--cyan); }
+.tc-tilt { position: absolute; left: calc(12px + var(--safe-l)); bottom: calc(16px + var(--safe-b)); width: calc(var(--pad) * 1.6); height: calc(var(--pad) * 0.7); border-radius: 14px; font-size: 22px; line-height: 1; text-align: center; }
+.tc-tilt small { display: block; font-family: var(--font-body); font-size: 12px; font-weight: 700; }
+.tc-pedals {
+  position: absolute;
+  right: calc(12px + var(--safe-r));
+  bottom: calc(16px + var(--safe-b));
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  grid-template-areas: 'drift drift' 'brake gas';
+  gap: 10px;
+  align-items: end;
+  justify-items: end;
+}
+.tc-btn { border-radius: 50%; font-size: calc(var(--small) * 0.24); letter-spacing: 1px; }
+.tc-gas { grid-area: gas; width: var(--gas); height: var(--gas); background: rgba(124, 255, 107, 0.85); font-size: calc(var(--gas) * 0.24); }
+.tc-brake { grid-area: brake; width: var(--small); height: var(--small); background: rgba(255, 77, 90, 0.85); color: var(--paper); -webkit-text-stroke: 1px var(--ink); }
+.tc-drift { grid-area: drift; width: calc(var(--small) * 1.6); height: calc(var(--small) * 0.72); border-radius: 16px; background: rgba(61, 242, 255, 0.85); }
+.tc-gas.on { background: var(--green); }
+.tc-brake.on { background: var(--red); }
+.tc-drift.on { background: var(--pink); color: var(--paper); }
+.auto-gas .tc-gas { opacity: 0.55; }
+.tc-sys { position: absolute; right: calc(10px + var(--safe-r)); top: calc(66px + var(--safe-t)); display: flex; gap: 8px; }
+.tc-small {
+  width: 48px;
+  height: 48px;
+  font-family: var(--font-comic);
+  font-size: 22px;
+  border: 3px solid var(--ink);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  color: var(--ink);
+  padding: 0;
+}
+
+/* HUD rearranged around the thumbs on touch devices. */
+.touch-ui .hud-bottom { bottom: auto; top: calc(66px + var(--safe-t)); }
+.touch-ui .hud-speed { transform: scale(0.8); transform-origin: top center; }
+@media (orientation: portrait) {
+  .touch-ui .hud-top { gap: 6px; }
+  .touch-ui .hud-top .panel { padding: 3px 7px; }
+  .touch-ui .hud-cp .label, .touch-ui .hud-best .label { display: none; }
+  .touch-ui .hud-timer { min-width: 0; }
+  .touch-ui .tc-sys { top: calc(62px + var(--safe-t)); }
+  .touch-ui .hud-bottom { top: calc(60px + var(--safe-t)); }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .touch-ui .hud-bottom { top: auto; bottom: calc(10px + var(--safe-b)); }
+  .touch-ui .hud-speed { transform: scale(0.75); transform-origin: bottom center; }
+  .touch-ui .tc-sys { top: calc(56px + var(--safe-t)); }
+}
+@media (orientation: portrait) {
+  .touch-controls { --pad: min(22vw, 13vh, 110px); --gas: min(26vw, 15vh, 120px); --small: min(19vw, 11vh, 88px); }
+  .tc-pedals { grid-template-areas: 'drift brake' '. gas'; }
+}
+@media (max-width: 600px) {
+  .card-art { height: 72px; }
+  .card-num { font-size: 46px; }
+  .card h3 { font-size: 26px; margin-top: 8px; }
+  .cards { gap: 16px; }
 }

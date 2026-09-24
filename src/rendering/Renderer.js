@@ -44,6 +44,8 @@ export class Renderer {
     this._onResize = () => this.resize();
     window.addEventListener('resize', this._onResize);
     window.addEventListener('orientationchange', () => setTimeout(this._onResize, 150));
+    // iOS resizes the visual viewport when the URL bar shows/hides.
+    window.visualViewport?.addEventListener('resize', this._onResize);
     this.resize();
   }
 

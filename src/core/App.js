@@ -15,6 +15,7 @@ import { getSettings } from '../storage/settings.js';
 import { readJSON } from '../storage/storage.js';
 import { listCustomTracks } from '../storage/customTracks.js';
 import { Editor } from '../editor/Editor.js';
+import { TouchControls, hasTouch } from '../input/Touch.js';
 
 /**
  * Top-level state machine. Owns the renderer, the shared Stage, input, the
@@ -52,9 +53,24 @@ export class App {
       },
       frame: (dt, alpha) => {
         if (this.mode) this.mode.frame(this.paused ? 0 : dt, this.paused ? 1 : alpha);
+        if (this.touch) {
+          const want = this.modeName === 'race' && !this.paused && !this.menus.visible;
+          if (want !== this._touchShown) {
+            this._touchShown = want;
+            this.touch.show(want);
+          }
+        }
       },
     });
     this.customTracks = () => listCustomTracks();
+    this.isTouch = hasTouch();
+    uiRoot.classList.toggle('touch-ui', this.isTouch);
+    document.body.classList.toggle('touch-device', this.isTouch);
+    if (this.isTouch) {
+      this.touch = this.input.addSource(new TouchControls(uiRoot));
+      this.touch.onAction((a) => this.onAction(a));
+      this.touch.onFirstTouch = () => this.audio?.unlock?.();
+    }
     this.input.onAction((action) => this.onAction(action));
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.modeName === 'race' && this.mode?.race.state === 'racing') this.pause();

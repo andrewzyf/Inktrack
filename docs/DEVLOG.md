@@ -324,3 +324,51 @@ distinct in road style, sky and palette. Browser screenshots of each.
   `Verify-Loop.inktrack.json` download) and re-imported, test-driven to the
   finish (8.07 s, 0 respawns), back in the editor with undo history, and
   listed in the track select screen.
+
+## Phase 8 — Mobile support
+
+**Built**
+- `input/Touch.js`: on-screen controls, shown automatically on touch
+  devices (or with `?touch=1`) during races only. Left thumb: a two-zone
+  steering pad. Right thumb: big GAS, BRAKE and DRIFT. Every finger is
+  hit-tested on each move, so you can **slide between ◀/▶ or GAS/BRAKE
+  without lifting**. Controls respond on `pointerdown` (no click delay), and
+  `touch-action: none` blocks scrolling and zooming. Plus ↺ reset and ❚❚
+  pause buttons.
+- **Tilt steering** (Settings → Touch steering → Tilt): DeviceOrientation
+  with an auto-calibrated neutral pose, dead zone and portrait/landscape
+  axis mapping. It requests iOS 13+ motion permission from that settings
+  gesture, and a tap re-centres it. **Auto-accelerate** option.
+- Responsive layouts: the HUD reflows around the thumbs (speed/meter under
+  the timer in portrait, bottom-centre in landscape), portrait stacks
+  BRAKE above GAS with DRIFT beside it, controls size with
+  `min(vw, vh, px)` and respect safe-area insets, menus scroll on short
+  screens, the editor toolbar collapses file actions into FILE ▾, and
+  panels shrink on narrow screens.
+- Canvas/renderer: resize on window, orientation and visualViewport
+  changes; portrait keeps a sensible horizontal FOV; touch devices default
+  to the Medium preset (pixel ratio ≤ 1.5).
+- Editor touch: tap to place, one-finger pan, pinch zoom, two-finger twist.
+
+**Verified** (`scripts/verify-phase8.mjs`, emulated phone with real
+multi-touch via CDP, portrait 390×844 and landscape 844×390):
+- Menus navigated by tapping. No page overflow either way.
+- **Input latency: GAS is live synchronously inside the `touchstart`
+  handler**, so the next 120 Hz physics tick (≤ 8.3 ms) sees it.
+- Hold GAS → accelerates. Hold GAS + ▶ → turns right. Sliding the same
+  finger to ◀ → steer −1, turns left. GAS + ◀ + DRIFT → drifting
+  (landscape run). ❚❚ pauses.
+- Tilt: enabled through the real Settings UI; ±12° from neutral → steer
+  ±0.49, steering pad hidden.
+- Rotating mid-race resizes the canvas to landscape (1266×585 @1.5×).
+- Editor: palette tap + canvas tap places a piece; pinch zooms 95 → 28 m;
+  drag pans.
+
+**Bug caught:** the first canvas tap in the editor after switching theme
+landed during a one-off shader/texture stall, and the tap timer (measured
+with `performance.now()`) saw 914 ms and treated it as a long-press. Taps now
+use the events' own input timestamps.
+
+**Note:** real-device testing (actual iOS/Android GPUs and gyros) isn't
+possible from this container. Everything above ran in Chromium's mobile
+emulation, and tilt was checked with synthetic orientation events.

@@ -313,7 +313,9 @@ export class Editor {
       canvas.setPointerCapture?.(e.pointerId);
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button, type: e.pointerType });
       if (pointers.size === 1) {
-        dragStart = { x: e.clientX, y: e.clientY, t: performance.now(), button: e.button };
+        // Event timestamps measure the real finger-down time even if the main
+        // thread stalls (first-use shader compiles), unlike performance.now().
+        dragStart = { x: e.clientX, y: e.clientY, t: e.timeStamp, button: e.button };
         dragging = false;
       } else {
         dragStart = null; // multi-touch gesture, never a tap
@@ -358,7 +360,7 @@ export class Editor {
       pointers.delete(e.pointerId);
       if (pointers.size < 2) lastPinch = null;
       if (!was || !dragStart) return;
-      const tap = !dragging && performance.now() - dragStart.t < 600 && dragStart.button !== 2;
+      const tap = !dragging && e.timeStamp - dragStart.t < 700 && dragStart.button !== 2;
       dragStart = null;
       if (tap) {
         this._setHover(this._cellFromClient(e.clientX, e.clientY));
