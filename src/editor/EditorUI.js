@@ -55,7 +55,7 @@ export class EditorUI {
         <b>CLICK</b> place · <b>DRAG</b> pan · <b>RIGHT-DRAG</b> orbit · <b>WHEEL</b> zoom · <b>WASD</b> pan · <b>Q/E</b> turn view ·
         <b>R</b> rotate · <b>+/−</b> level · <b>X</b> erase · <b>I</b> ice · <b>T</b> test drive
       </div>
-      <input type="file" accept=".json,application/json" class="ed-file" hidden>`;
+      <input type="file" accept=".json,application/json" class="ed-file-input" hidden>`;
     parent.appendChild(this.el);
     this.q = (s) => this.el.querySelector(s);
     this.nameInput = this.q('.ed-name');
@@ -63,7 +63,7 @@ export class EditorUI {
     this.statusEl = this.q('.ed-status');
     this.labelsEl = this.q('.ed-labels');
     this.toastEl = this.q('.ed-toast');
-    this.fileInput = this.q('.ed-file');
+    this.fileInput = this.q('.ed-file-input');
     this.labels = [];
     this.dialogOpen = false;
 

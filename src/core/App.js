@@ -16,6 +16,7 @@ import { readJSON } from '../storage/storage.js';
 import { listCustomTracks } from '../storage/customTracks.js';
 import { Editor } from '../editor/Editor.js';
 import { TouchControls, hasTouch } from '../input/Touch.js';
+import { Sfx } from '../audio/Sfx.js';
 
 /**
  * Top-level state machine. Owns the renderer, the shared Stage, input, the
@@ -31,11 +32,14 @@ export class App {
     this.params = new URLSearchParams(location.search);
     const q = this.params.get('quality') || getSettings().quality;
     this.renderer = new Renderer(canvas, q === 'auto' ? undefined : q);
+    // "Auto" quality: a governor trades resolution for frame rate at runtime.
+    this.governor = { enabled: q === 'auto', time: 0, frames: 0, good: 0 };
     this.stage = new Stage(this.renderer);
     this.input = new Input();
     this.hud = new HUD(uiRoot);
     this.impacts = new ImpactLayer(uiRoot);
     this.menus = new Menus(this, uiRoot);
+    this.audio = new Sfx();
     this.mode = null;
     this.modeName = null;
     this.paused = false;
@@ -53,6 +57,8 @@ export class App {
       },
       frame: (dt, alpha) => {
         if (this.mode) this.mode.frame(this.paused ? 0 : dt, this.paused ? 1 : alpha);
+        this._govern(dt);
+        this._fpsMeter(dt);
         if (this.touch) {
           const want = this.modeName === 'race' && !this.paused && !this.menus.visible;
           if (want !== this._touchShown) {
@@ -75,6 +81,42 @@ export class App {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.modeName === 'race' && this.mode?.race.state === 'racing') this.pause();
     });
+  }
+
+  _fpsMeter(dt) {
+    if (!getSettings().showFps && !this.params.has('fps')) {
+      if (this._fpsShown) this.hud.setFps(null);
+      this._fpsShown = false;
+      return;
+    }
+    this._fpsShown = true;
+    this._fpsT = (this._fpsT || 0) + dt;
+    if (this._fpsT < 0.5) return;
+    this._fpsT = 0;
+    const r = this.renderer;
+    this.hud.setFps(`${this.loop.fps.toFixed(0)} fps · ${r.info.calls} draws · ${(r.info.triangles / 1000).toFixed(0)}k tris · ${(r.pixelRatio).toFixed(2)}x`);
+  }
+
+  /** Dynamic resolution: drop render scale when fps sags, restore when there's headroom. */
+  _govern(dt) {
+    const g = this.governor;
+    if (!g.enabled || this.paused || this.modeName !== 'race' || dt <= 0) return;
+    g.time += dt;
+    g.frames++;
+    // Long windows: each change reallocates the drawing buffer (a small hitch).
+    if (g.time < 4) return;
+    const fps = g.frames / g.time;
+    g.time = 0;
+    g.frames = 0;
+    const r = this.renderer;
+    if (fps < 48 && r.resolutionScale > 0.6) {
+      r.setResolutionScale(r.resolutionScale - 0.1);
+      g.good = 0;
+    } else if (fps > 58 && r.resolutionScale < 1 && ++g.good >= 3) {
+      r.setResolutionScale(r.resolutionScale + 0.1);
+      g.good = 0;
+    }
+    this.fps = fps;
   }
 
   start() {
@@ -189,6 +231,7 @@ export class App {
       return;
     }
     const result = { ...submitTime(key, e.time, e.splits), time: e.time };
+    if (result.isBest && result.previousBest != null) this.audio.play('record');
     if (result.isBest && session.recorder) {
       saveGhost(key, session.recorder.toGhost({ time: e.time, splits: e.splits, trackKey: key }));
     }
@@ -227,6 +270,7 @@ export class App {
     if (this.modeName !== 'race' || this.paused) return;
     if (this.mode.race.state === 'finished') return;
     this.paused = true;
+    this.audio.setBed(false);
     this.menus.open('pause');
   }
 

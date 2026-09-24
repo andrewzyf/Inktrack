@@ -8,7 +8,11 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sim": "node scripts/sim-lap.mjs",
+    "physics-report": "node scripts/physics-report.mjs",
+    "verify": "node scripts/verify-phase4.mjs && node scripts/verify-phase5.mjs && node scripts/verify-phase7.mjs && node scripts/verify-phase8.mjs",
+    "perf": "node scripts/perf.mjs"
   },
   "license": "MIT",
   "dependencies": {

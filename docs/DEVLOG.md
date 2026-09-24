@@ -372,3 +372,88 @@ use the events' own input timestamps.
 **Note:** real-device testing (actual iOS/Android GPUs and gyros) isn't
 possible from this container. Everything above ran in Chromium's mobile
 emulation, and tilt was checked with synthetic orientation events.
+
+## Phase 9 — Polish pass
+
+**Comic HUD & impact effects**
+- HUD: ink-bordered panels with offset shadows, Bangers lettering, the timer
+  in an inverted black panel, a tiered drift meter (blue/orange/pink, striped
+  while boosting) and split-delta tags.
+- Starburst impact bubbles: 3-2-1-GO!, CHECK! n/N, DRIFT! (when a slide
+  reaches tier 2), VRM!/VROOM!/VROOOM! by boost size, ZOOM! (pads), AIR!,
+  WHAM!/THUD! (big landings), BONK!/CRUNCH! (walls), SPLAT!/WHOOPS! (falls),
+  KRASH! (flips), MISSED!, FINISH!, NEW RECORD!. There is also an inked
+  yellow/orange edge pulse while boosting.
+- Optional FPS meter (Settings or `?fps`): fps, draw calls, triangles,
+  render scale.
+
+**Sound** (`src/audio/Sfx.js`, all synthesized with Web Audio, so there
+are no files and no licensing): an engine with a fake gearbox (pitch climbs,
+drops on each shift, brighter under throttle and boost), tyre squeal from
+slip/drift/hard braking (pitched lower on ice), speed-dependent wind, a boost
+whoosh, a pitch-rising VROOM for drift boosts, a checkpoint arpeggio (plus an
+"ahead" chirp when beating your split), countdown beeps, a finish fanfare and
+record jingle, wall crunches, landing thumps, a fall slide-whistle, and UI
+clicks / place pop / erase swish / error buzz. The context unlocks on the
+first key or tap, the volume slider is live, and the engine bed mutes on
+pause/menus. Verified running in the browser (`scripts/verify-audio.mjs`).
+
+**Performance pass** (`scripts/perf.mjs`: mobile viewport, 4× CPU
+throttling, profiled after warm-up)
+
+| | before | after |
+|---|---|---|
+| Car draw calls (player + ghost) | ~18 + ~18 | 5 + 5 (merged body, instanced wheels) |
+| Rooftop Run frame draw calls | ~50 | ~36–40 |
+| Physics per 120 Hz tick (4× throttled) | 0.14–0.26 ms | 0.13–0.18 ms |
+| Scene update per frame (4× throttled) | 0.8 ms | 0.5–0.8 ms |
+| Render submit p95 (4× throttled) | ~6 ms | ~5.6–7.7 ms |
+
+At 4× CPU throttle, main-thread work for a 60 fps frame (2 physics ticks,
+scene update, render submission) is about 7–9 ms at p95, well inside the
+16.7 ms budget. Changes:
+- Car: body, cabin, trim and stripes merged into one vertex-coloured mesh;
+  the four wheels are a single InstancedMesh (hulls included).
+- Outline LOD: track-chunk hulls more than 300 m away are skipped (they're
+  thin and fogged there anyway).
+- **Dynamic resolution governor** for "Auto" quality: every 4 s it drops
+  the render scale by 0.1 (to a 0.6 floor) when fps < 48 and restores it
+  after sustained > 58 fps. The window is long because each change
+  reallocates the drawing buffer.
+- Collision callbacks bound once (no per-tick closure allocations). The
+  simulation stays bit-identical: Rooftop Run's autopilot lap is still
+  36.237 s.
+
+**Heaviest case:** Frost Peak's open mountain views draw ~80 calls and ~150k
+triangles including outlines. That's comfortable for 2022 mid-range GPUs
+(Adreno 64x / Mali-G78 class), but it's the first place to trim if a device
+struggles (lower `quality` or reduce the decor radius in `decor.js`).
+
+**Caveat:** this container only has software WebGL (SwiftShader), so GPU
+timings here are meaningless. The numbers above are main-thread CPU costs
+under throttling. **Please try it on a real phone.** The FPS meter
+(`?fps`) shows draw calls, triangles and render scale on-device.
+
+**Bug caught in the final pass:** Phase 8's FILE ▾ dropdown reused the
+`.ed-file` class, so the editor grabbed the dropdown instead of the hidden
+file input and IMPORT stopped working. The re-run of the full editor
+verification caught it; fixed.
+
+---
+
+## Things that need your input
+
+1. **Handling feel vs. PolyTrack.** The tune is an educated guess. Drive it
+   and tell me what feels off. `npm run physics-report` prints the current
+   numbers, and `INKTRACK.physics` can be edited live in the console.
+2. **Loop assist.** Loops auto-steer the car along the lane-shift. Keep it,
+   or make loops require steering (`ground.guideCentering` / the `guided`
+   flag on the loop piece)?
+3. **Air control.** Throttle does not pitch the car in the air, because holding
+   gas made it nose-dive. PolyTrack-style manual air pitch exists behind
+   `air.pitchControl`.
+4. **Countdown.** Races use a 1.5 s 3-2-1 countdown. PolyTrack starts the
+   clock on the first input instead; I can switch to that if you prefer.
+5. **Real-device testing.** Everything was verified in Chromium (desktop +
+   mobile emulation with real multi-touch). Please check on an actual phone,
+   especially tilt steering on iOS (permission prompt) and GPU frame rate.

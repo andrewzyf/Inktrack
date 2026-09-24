@@ -1,5 +1,5 @@
 import { Mesh, PlaneGeometry, MeshBasicMaterial, Vector3, Quaternion, Matrix4, Color } from 'three';
-import { createCarModel } from './CarModel.js';
+import { createCarModel, updateWheels } from './CarModel.js';
 import { PHYSICS } from '../config/physics.js';
 import { DRIVABLE, RayHit } from '../physics/CollisionWorld.js';
 import { PUFF, SPARK } from './Particles.js';
@@ -73,12 +73,13 @@ export class CarView {
     const rh = PHYSICS.car.rideHeight;
     for (let i = 0; i < wheels.length; i++) {
       const w = wheels[i];
-      w.spin.rotation.x = this.spin;
-      if (w.front) w.pivot.rotation.y = -car.steer * 0.42;
+      w.spin = this.spin;
+      if (w.front) w.steer = -car.steer * 0.42;
       const d = car.wheels[i].contact ? car.wheels[i].distance : rh + 0.28;
       const droop = Math.max(-0.12, Math.min(0.28, d - rh));
-      w.pivot.position.y += (w.base.y - droop - w.pivot.position.y) * Math.min(1, dt * 25);
+      w.y += (w.base.y - droop - w.y) * Math.min(1, dt * 25);
     }
+    updateWheels(m);
 
     // Body roll into turns / slides, pitch under accel & braking.
     const accel = (car.forwardSpeed - this.prevSpeed) / Math.max(dt, 1e-4);

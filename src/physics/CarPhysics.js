@@ -71,6 +71,14 @@ export class CarPhysics {
 
     /** Queue of gameplay events since the last `drainEvents()`. */
     this.events = [];
+    // Collision query scratch state + callbacks bound once (no per-tick allocations).
+    this._qUp = new Vector3();
+    this._qSphere = null;
+    this._qIndex = 0;
+    this._qImpact = 0;
+    this._qUpset = false;
+    this._onWallContact = (tri, cp, dist) => this._wallContact(tri, cp, dist);
+    this._onBodyContact = (tri, cp, dist) => this._bodyContact(tri, cp, dist);
     this.reset(new Vector3(), new Quaternion());
   }
 
@@ -502,28 +510,33 @@ export class CarPhysics {
 
   _resolveWalls() {
     const wl = this.cfg.walls;
-    let maxImpact = 0;
+    this._qImpact = 0;
     for (const s of this.wallSpheres) {
+      this._qSphere = s;
       _center.copy(s.local).applyQuaternion(this.quaternion).add(this.position);
-      this.world.sphereQuery(_center, s.radius, WALL, (tri, cp, dist) => {
-        if (dist > 1e-5) _n.subVectors(_center, cp).multiplyScalar(1 / dist);
-        else this.world.getFaceNormal(tri, _n);
-        const pen = s.radius - dist;
-        this.position.addScaledVector(_n, pen);
-        _center.addScaledVector(_n, pen);
-        const vn = this.velocity.dot(_n);
-        if (vn < 0) {
-          const impact = -vn;
-          maxImpact = Math.max(maxImpact, impact);
-          this.velocity.addScaledVector(_n, -vn * (1 + wl.restitution));
-          // Scrape: lose some speed along the wall proportional to the impact.
-          const tangential = this.velocity.length();
-          if (tangential > 1e-3) this.velocity.multiplyScalar(Math.max(0, 1 - wl.friction * impact));
-          this._alignAlongWall(_n, impact);
-        }
-      });
+      this.world.sphereQuery(_center, s.radius, WALL, this._onWallContact);
     }
-    if (maxImpact > wl.impactEvent) this._emit('wall', maxImpact);
+    if (this._qImpact > wl.impactEvent) this._emit('wall', this._qImpact);
+  }
+
+  /** sphereQuery callback (bound once in the constructor — no per-tick closures). */
+  _wallContact(tri, cp, dist) {
+    const wl = this.cfg.walls;
+    const s = this._qSphere;
+    if (dist > 1e-5) _n.subVectors(_center, cp).multiplyScalar(1 / dist);
+    else this.world.getFaceNormal(tri, _n);
+    const pen = s.radius - dist;
+    this.position.addScaledVector(_n, pen);
+    _center.addScaledVector(_n, pen);
+    const vn = this.velocity.dot(_n);
+    if (vn < 0) {
+      const impact = -vn;
+      this._qImpact = Math.max(this._qImpact, impact);
+      this.velocity.addScaledVector(_n, -vn * (1 + wl.restitution));
+      // Scrape: lose some speed along the wall proportional to the impact.
+      if (this.velocity.lengthSq() > 1e-6) this.velocity.multiplyScalar(Math.max(0, 1 - wl.friction * impact));
+      this._alignAlongWall(_n, impact);
+    }
   }
 
   /** Swing the nose parallel to a wall we hit so the car scrapes instead of sticking. */
@@ -546,31 +559,37 @@ export class CarPhysics {
 
   /** Keep the body out of the road when the car is not on its wheels. */
   _resolveBody(dt) {
-    const up = this.getUp(_up);
-    let upset = false;
+    this.getUp(this._qUp);
+    this._qUpset = false;
     for (let i = 0; i < this.bodySpheres.length; i++) {
       const s = this.bodySpheres[i];
+      this._qSphere = s;
+      this._qIndex = i;
       _center.copy(s.local).applyQuaternion(this.quaternion).add(this.position);
-      this.world.sphereQuery(_center, s.radius, DRIVABLE, (tri, cp, dist) => {
-        this.world.getFaceNormal(tri, _n);
-        // Wheels handle surfaces we are standing on normally.
-        if (this.grounded && _n.dot(up) > 0.5) return;
-        if (dist > 1e-5) _n.subVectors(_center, cp).multiplyScalar(1 / dist);
-        const pen = s.radius - dist;
-        this.position.addScaledVector(_n, pen);
-        _center.addScaledVector(_n, pen);
-        const vn = this.velocity.dot(_n);
-        if (vn < 0) {
-          if (-vn > this.cfg.walls.impactEvent) this._emit('wall', -vn);
-          this.velocity.addScaledVector(_n, -vn * 1.2);
-          this.velocity.multiplyScalar(0.985);
-        }
-        // Touching the road with the roof or while tipped over = flipped.
-        if (i === 0 || _n.dot(up) < 0.5) upset = true;
-      });
+      this.world.sphereQuery(_center, s.radius, DRIVABLE, this._onBodyContact);
     }
-    this.flipped = upset && !this.grounded;
+    this.flipped = this._qUpset && !this.grounded;
     this.flippedTime = this.flipped ? this.flippedTime + dt : 0;
+  }
+
+  _bodyContact(tri, cp, dist) {
+    const up = this._qUp;
+    const s = this._qSphere;
+    this.world.getFaceNormal(tri, _n);
+    // Wheels handle surfaces we are standing on normally.
+    if (this.grounded && _n.dot(up) > 0.5) return;
+    if (dist > 1e-5) _n.subVectors(_center, cp).multiplyScalar(1 / dist);
+    const pen = s.radius - dist;
+    this.position.addScaledVector(_n, pen);
+    _center.addScaledVector(_n, pen);
+    const vn = this.velocity.dot(_n);
+    if (vn < 0) {
+      if (-vn > this.cfg.walls.impactEvent) this._emit('wall', -vn);
+      this.velocity.addScaledVector(_n, -vn * 1.2);
+      this.velocity.multiplyScalar(0.985);
+    }
+    // Touching the road with the roof or while tipped over = flipped.
+    if (this._qIndex === 0 || _n.dot(up) < 0.5) this._qUpset = true;
   }
 }
 

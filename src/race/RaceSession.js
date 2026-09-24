@@ -7,7 +7,7 @@ import { CarView } from '../rendering/CarView.js';
 import { Race } from './Race.js';
 import { Autopilot } from './Autopilot.js';
 import { hashString } from '../core/random.js';
-import { createCarModel, setGhostOpacity } from '../rendering/CarModel.js';
+import { createCarModel, setGhostOpacity, updateWheels } from '../rendering/CarModel.js';
 import { Recorder } from '../replay/Recorder.js';
 import { GhostPlayer } from '../replay/GhostPlayer.js';
 import { PHYSICS } from '../config/physics.js';
@@ -79,6 +79,10 @@ export class RaceSession {
     return this.options.attract ? null : this.app.impacts;
   }
 
+  get sfx() {
+    return this.options.attract ? null : this.app.audio;
+  }
+
   restart() {
     this.recorder?.reset();
     this.race.restart();
@@ -103,6 +107,7 @@ export class RaceSession {
 
   fixedUpdate(dt) {
     const controls = this.autopilot ? this.autopilot.sample(this.app.input.controls) : this.app.input.sample();
+    this.lastControls = controls;
     const wasCountdown = this.race.state === 'countdown';
     this.race.step(dt, controls);
     if (this.recorder) {
@@ -122,8 +127,10 @@ export class RaceSession {
 
   _handleEvents() {
     const fx = this.impacts;
+    const sfx = this.sfx;
     const chase = this.app.stage.chase;
     for (const e of this.carEvents) {
+      if (sfx) sfx.play(e.type === 'boostPad' ? 'boost' : e.type, e.value);
       switch (e.type) {
         case 'land':
           this.view.impulse(Math.min(2.4, e.value * 0.09));
@@ -142,6 +149,7 @@ export class RaceSession {
           fx?.show(e.value > 0.85 ? 'VROOOM!' : e.value > 0.5 ? 'VROOM!' : 'VRM!', 'driftBoost', { y: 0.6, size: 8 + e.value * 4 });
           break;
         case 'driftStart':
+          this._driftCalled = false;
           break;
         case 'airtime':
           if (e.value > 1.2) fx?.show('AIR!', 'drift', { y: 0.3, size: 8, sub: `${e.value.toFixed(1)}s` });
@@ -155,30 +163,41 @@ export class RaceSession {
 
   onRaceEvent(e) {
     const fx = this.impacts;
+    const sfx = this.sfx;
     switch (e.type) {
       case 'countdown':
         fx?.show(String(e.n), 'count', { size: 16, duration: 480, rotate: 0 });
+        sfx?.play('count');
         break;
       case 'go':
         fx?.show('GO!', 'go', { size: 17, duration: 700, rotate: -4 });
+        sfx?.play('go');
         break;
       case 'checkpoint': {
         const best = this.bestSplits?.[e.index];
         const delta = best != null ? e.time - best : null;
         this.app.hud.flashDelta(delta);
         fx?.show('CHECK!', 'checkpoint', { y: 0.26, size: 9, sub: `${e.index + 1}/${this.race.checkpointCount}` });
+        sfx?.play('checkpoint');
+        if (delta != null && delta < 0) sfx?.play('ahead');
         break;
       }
       case 'missed':
         fx?.show('MISSED!', 'crash', { size: 12, sub: 'checkpoint' });
+        sfx?.play('missed');
         break;
       case 'fail':
         if (e.reason === 'fall') {
           fx?.show(pickWord(['SPLAT!', 'WHOOPS!', 'YIKES!']), 'fall', { size: 13 });
+          sfx?.play('fall');
           this.fallCam = this.app.stage.renderer.camera.position.clone();
-        } else if (e.reason === 'flip') fx?.show('KRASH!', 'crash', { size: 13 });
+        } else if (e.reason === 'flip') {
+          fx?.show('KRASH!', 'crash', { size: 13 });
+          sfx?.play('wall', 20);
+        }
         break;
       case 'respawn':
+        sfx?.play('respawn');
         this.fallCam = null;
         this.view.reset();
         if (this.autopilot) this.autopilot.relocate();
@@ -186,6 +205,7 @@ export class RaceSession {
         break;
       case 'finish':
         fx?.show('FINISH!', 'finish', { size: 15, duration: 1400 });
+        sfx?.play('finish');
         this.options.onFinish?.(e, this);
         break;
     }
@@ -209,11 +229,23 @@ export class RaceSession {
     } else {
       stage.chase.update(dt, this.renderPos, this.renderQuat, { speed: car.speed, grounded: car.grounded, velocity: car.velocity, boosting: car.boosting });
     }
+    this.meshes.userData.updateLod?.(stage.renderer.camera.position);
     const speedN = Math.min(1, Math.abs(car.speed) / 60);
     const lines = car.boosting ? 1 : car.drifting ? 0.45 + speedN * 0.35 : Math.max(0, (speedN - 0.6) * 2.2);
     stage.render(dt, { speedLines: race.state === 'racing' ? lines : 0 });
 
     if (!this.options.attract) {
+      // "DRIFT!" once a slide reaches the second boost tier.
+      if (car.drifting && car.driftMeter > 0.5 && !this._driftCalled) {
+        this._driftCalled = true;
+        this.impacts?.show('DRIFT!', 'drift', { y: 0.66, size: 8 });
+        this.sfx?.play('drift');
+      }
+      const sfx = this.app.audio;
+      if (sfx) {
+        sfx.setBed(!this.app.paused);
+        sfx.updateCar(car, this.lastControls || {});
+      }
       this.app.hud.update({
         time: race.time,
         checkpoint: race.nextCheckpoint,
@@ -243,7 +275,8 @@ export class RaceSession {
     this.ghostPrev.copy(this.ghostPos);
     if (moved < 5) {
       this.ghostSpin += moved / 0.37;
-      for (const w of m.userData.wheels) w.spin.rotation.x = this.ghostSpin;
+      for (const w of m.userData.wheels) w.spin = this.ghostSpin;
+      updateWheels(m);
     }
     // Fade when overlapping the player so it never hides the car.
     const d = this.ghostPos.distanceTo(this.renderPos);
@@ -251,6 +284,7 @@ export class RaceSession {
   }
 
   dispose() {
+    this.app.audio?.setBed(false);
     this.app.stage.chase.world = null;
     this.app.stage.clearTrack();
     this.app.hud.show(false);

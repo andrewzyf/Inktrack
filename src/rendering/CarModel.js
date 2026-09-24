@@ -1,5 +1,5 @@
 import {
-  Group, Mesh, Shape, ExtrudeGeometry, BoxGeometry, CylinderGeometry, Matrix4, Vector3, Color,
+  Group, Mesh, InstancedMesh, Shape, ExtrudeGeometry, BoxGeometry, CylinderGeometry, Matrix4, Vector3, Quaternion,
 } from 'three';
 import { createToonMaterial, createOutlineMaterial } from './materials.js';
 import { addOutline, computeOutlineNormals } from './outline.js';
@@ -122,10 +122,35 @@ export const WHEEL_POSITIONS = [
   new Vector3(-0.9, -0.18, -1.28),
 ];
 
+const mergedBodies = new Map();
+
+/** Body, cabin, trim and stripes merged into one vertex-coloured mesh (1 draw + 1 hull). */
+function mergedBody(color) {
+  if (!mergedBodies.has(color)) {
+    const parts = carParts();
+    const b = new GeoBuilder();
+    const id = new Matrix4();
+    b.append(parts.body, id, color);
+    b.append(parts.cabin, id, CAR_COLORS.glass);
+    b.append(parts.trimGeo, id, 0xffffff);
+    b.append(parts.stripeGeo, id, 0xffffff);
+    mergedBodies.set(color, b.toGeometry());
+  }
+  return mergedBodies.get(color);
+}
+
+const _wm = new Matrix4();
+const _wq = new Quaternion();
+const _wqs = new Quaternion();
+const _wp = new Vector3();
+const _one = new Vector3(1, 1, 1);
+const _axisX = new Vector3(1, 0, 0);
+const _axisY = new Vector3(0, 1, 0);
+
 /**
- * Create a car model.
- * options.ghost → translucent, flat-blue "ghost" variant (no halftone).
- * options.color → body colour override.
+ * Create a car model: merged body mesh, emissive lights, and the four wheels
+ * as one InstancedMesh (≈5 draw calls including ink outlines).
+ * options.ghost → translucent flat-blue "ghost" variant (no halftone).
  */
 export function createCarModel({ ghost = false, color = CAR_COLORS.body, opacity = 0.42 } = {}) {
   const parts = carParts();
@@ -134,28 +159,21 @@ export function createCarModel({ ghost = false, color = CAR_COLORS.body, opacity
   const body = new Group(); // squash/tilt pivot
   root.add(body);
 
-  let bodyMat, cabinMat, trimMat, lightMat, stripeMat, wheelMat, outlineMat;
+  let bodyMat, lightMat, wheelMat, outlineMat;
   if (ghost) {
     const g = { transparent: true, opacity, halftone: false, depthWrite: true };
     bodyMat = createToonMaterial({ ...g, color: 0x7fd4ff, name: 'ghostBody' });
-    cabinMat = createToonMaterial({ ...g, color: 0x3d78c9 });
-    trimMat = createToonMaterial({ ...g, color: 0xbfe8ff, vertexColors: false });
     lightMat = createToonMaterial({ ...g, color: 0xffffff, emissive: 0x777777 });
-    stripeMat = trimMat;
     wheelMat = createToonMaterial({ ...g, color: 0x2e5aa0 });
     outlineMat = createOutlineMaterial({ opacity: opacity * 0.9, color: 0x123a7a, depthWrite: false });
   } else {
-    bodyMat = createToonMaterial({ color, shine: 1, name: 'carBody' });
-    cabinMat = createToonMaterial({ color: CAR_COLORS.glass, shine: 1.5 });
-    trimMat = createToonMaterial({ vertexColors: true });
+    bodyMat = createToonMaterial({ vertexColors: true, shine: 1, name: 'carBody' });
     lightMat = createToonMaterial({ vertexColors: true, emissive: 0x555555, halftone: false });
-    stripeMat = createToonMaterial({ vertexColors: true });
     wheelMat = createToonMaterial({ vertexColors: true });
     outlineMat = createOutlineMaterial({ thickness: 1.15 });
   }
 
-  const mk = (geo, mat, outline = true) => {
-    const mesh = new Mesh(geo, mat);
+  const shared = (mesh, outline = true) => {
     mesh.userData.sharedGeometry = true; // cached across cars — never dispose
     if (outline) {
       const hull = addOutline(mesh, outlineMat);
@@ -163,24 +181,33 @@ export function createCarModel({ ghost = false, color = CAR_COLORS.body, opacity
     }
     return mesh;
   };
-  body.add(mk(parts.body, bodyMat));
-  body.add(mk(parts.cabin, cabinMat));
-  body.add(mk(parts.trimGeo, trimMat));
-  body.add(mk(parts.lightGeo, lightMat, false));
-  if (!ghost) body.add(mk(parts.stripeGeo, stripeMat, false));
+  body.add(shared(new Mesh(mergedBody(color), bodyMat)));
+  body.add(shared(new Mesh(parts.lightGeo, lightMat), false));
 
-  const wheels = WHEEL_POSITIONS.map((p, i) => {
-    const pivot = new Group(); // steering yaw
-    pivot.position.copy(p);
-    const spin = mk(parts.wheelGeo, wheelMat);
-    if (i % 2 === 1) spin.rotation.y = Math.PI; // mirror rims to the outside
-    pivot.add(spin);
-    root.add(pivot);
-    return { pivot, spin, base: p.clone(), front: i < 2 };
-  });
+  const wheelMesh = new InstancedMesh(parts.wheelGeo, wheelMat, 4);
+  wheelMesh.frustumCulled = false;
+  shared(wheelMesh);
+  if (wheelMesh.userData.outline) wheelMesh.userData.outline.frustumCulled = false;
+  root.add(wheelMesh);
+  const wheels = WHEEL_POSITIONS.map((p, i) => ({ base: p.clone(), y: p.y, steer: 0, spin: 0, front: i < 2, mirror: i % 2 === 1 }));
 
-  root.userData = { body, wheels, ghost, materials: { bodyMat, outlineMat } };
+  root.userData = { body, wheels, wheelMesh, ghost, materials: { bodyMat, outlineMat } };
+  updateWheels(root);
   return root;
+}
+
+/** Push wheel spin / steer / suspension into the wheel InstancedMesh. */
+export function updateWheels(model) {
+  const { wheels, wheelMesh } = model.userData;
+  for (let i = 0; i < wheels.length; i++) {
+    const w = wheels[i];
+    _wq.setFromAxisAngle(_axisY, w.steer + (w.mirror ? Math.PI : 0));
+    _wqs.setFromAxisAngle(_axisX, w.mirror ? -w.spin : w.spin);
+    _wq.multiply(_wqs);
+    _wp.set(w.base.x, w.y, w.base.z);
+    wheelMesh.setMatrixAt(i, _wm.compose(_wp, _wq, _one));
+  }
+  wheelMesh.instanceMatrix.needsUpdate = true;
 }
 
 /** Set a ghost model's overall transparency (fades near the player). */
@@ -190,8 +217,4 @@ export function setGhostOpacity(model, opacity) {
       o.material.uniforms.uOpacity.value = o.material.isOutline ? opacity * 0.9 : opacity;
     }
   });
-}
-
-export function carBodyColor(model) {
-  return new Color().copy(model.userData.materials.bodyMat.uniforms.uColor.value);
 }

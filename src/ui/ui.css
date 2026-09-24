@@ -594,3 +594,31 @@ body.touch-device, body.touch-device * { -webkit-touch-callout: none; }
   .card h3 { font-size: 26px; margin-top: 8px; }
   .cards { gap: 16px; }
 }
+
+/* ── Boost flash & perf meter ───────────────────────────────────────── */
+.boost-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+  box-shadow: inset 0 0 0 6px var(--yellow), inset 0 0 60px 12px rgba(255, 122, 26, 0.55);
+}
+.boost-flash.on { opacity: 1; animation: boost-pulse 0.35s ease-in-out infinite alternate; }
+@keyframes boost-pulse { from { opacity: 0.65; } to { opacity: 1; } }
+.fps-meter {
+  position: absolute;
+  left: calc(10px + var(--safe-l));
+  bottom: calc(10px + var(--safe-b));
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: rgba(20, 16, 24, 0.75);
+  color: #7cff6b;
+  padding: 3px 7px;
+  border-radius: 4px;
+  white-space: pre;
+}
+.touch-ui .fps-meter { bottom: auto; top: calc(120px + var(--safe-t)); }
+.ed-top, .ed-tools, .ed-palette { z-index: 2; }
+.ed-status, .ed-help, .ed-toast { z-index: 3; }
+.ed-dialog { z-index: 10; }

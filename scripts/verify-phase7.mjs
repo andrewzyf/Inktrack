@@ -103,7 +103,7 @@ const [download] = await Promise.all([page.waitForEvent('download'), page.click(
 const file = await download.path();
 const json = JSON.parse(readFileSync(file, 'utf8'));
 console.log('export:', download.suggestedFilename(), json.format, json.pieces.length, 'pieces');
-await page.setInputFiles('.ed-file', file);
+await page.setInputFiles('.ed-file-input', file);
 await sleep(400);
 console.log('after import:', JSON.stringify(await ev(() => ({ name: window.__INKTRACK__.mode.track.name, pieces: window.__INKTRACK__.mode.track.pieces.length }))));
 

@@ -23,6 +23,13 @@ export class HUD {
       </div>`;
     parent.appendChild(el);
     this.el = el;
+    // Comic "boost" edge glow + optional perf meter.
+    this.flash = document.createElement('div');
+    this.flash.className = 'boost-flash';
+    parent.appendChild(this.flash);
+    this.fpsEl = document.createElement('div');
+    this.fpsEl.className = 'fps-meter hidden';
+    parent.appendChild(this.fpsEl);
     this.q = (s) => el.querySelector(s);
     this.timeEl = this.q('[data-time]');
     this.cpEl = this.q('[data-cp]');
@@ -36,6 +43,15 @@ export class HUD {
 
   show(on = true) {
     this.el.classList.toggle('hidden', !on);
+    if (!on) this.flash.classList.remove('on');
+  }
+
+  setFps(text) {
+    this.fpsEl.classList.toggle('hidden', text == null);
+    if (text != null && this.cache.fps !== text) {
+      this.cache.fps = text;
+      this.fpsEl.textContent = text;
+    }
   }
 
   _set(key, el, value, prop = 'textContent') {
@@ -65,6 +81,10 @@ export class HUD {
     if (this.cache.meter !== pct) {
       this.cache.meter = pct;
       this.fillEl.style.transform = `scaleX(${pct / 100})`;
+    }
+    if (this.cache.boost !== boosting) {
+      this.cache.boost = boosting;
+      this.flash.classList.toggle('on', !!boosting);
     }
     const tier = !drifting ? 'idle' : meter < 0.5 ? 't1' : meter < 0.85 ? 't2' : 't3';
     const cls = `meter ${tier}${boosting ? ' boosting' : ''}`;

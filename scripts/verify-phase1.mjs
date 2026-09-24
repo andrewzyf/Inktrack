@@ -1,10 +1,10 @@
 import { launch, sleep } from './pw.mjs';
-const url = process.argv[2] || 'http://localhost:4173/';
+const url = process.argv[2] || 'http://localhost:4173/?playground';
 const { browser, page, logs } = await launch();
 await page.goto(url);
-await page.waitForFunction(() => window.__INKTRACK__);
+await page.waitForFunction(() => window.__INKTRACK__?.mode?.car);
 const state = () => page.evaluate(() => {
-  const c = window.__INKTRACK__.car;
+  const c = window.__INKTRACK__.mode.car;
   return { pos: c.position.toArray().map((v) => +v.toFixed(2)), speed: +c.speed.toFixed(2), grounded: c.grounded };
 });
 console.log('start', await state());

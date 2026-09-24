@@ -33,15 +33,26 @@ export function createTrackMeshes(build, stage, theme) {
   group.name = 'trackMeshes';
   const mats = materialsFor(stage, theme);
   let triangles = 0;
+  const hulls = [];
   for (const { material, builder } of build.geo.entries()) {
     const geometry = builder.toGeometry();
     const mesh = new Mesh(geometry, mats[material] || mats.decor);
     mesh.name = material;
     mesh.matrixAutoUpdate = false;
-    if (!NO_OUTLINE.has(material)) addOutline(mesh);
+    if (!NO_OUTLINE.has(material)) {
+      const hull = addOutline(mesh);
+      if (hull) hulls.push({ hull, center: geometry.boundingSphere.center, radius: geometry.boundingSphere.radius });
+    }
     group.add(mesh);
     triangles += geometry.index.count / 3;
   }
   group.userData.triangles = triangles;
+  /**
+   * Outline LOD: past `maxDist` the ink lines are thin and fogged anyway,
+   * so skip those hull draws (saves vertex work and draw calls).
+   */
+  group.userData.updateLod = (cameraPos, maxDist = 300) => {
+    for (const h of hulls) h.hull.visible = h.center.distanceTo(cameraPos) - h.radius < maxDist;
+  };
   return group;
 }

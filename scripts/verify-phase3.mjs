@@ -1,8 +1,8 @@
 import { launch, sleep } from './pw.mjs';
-const url = process.argv[2] || 'http://localhost:4173/';
+const url = process.argv[2] || 'http://localhost:4173/?playground';
 const { browser, page, logs } = await launch();
 await page.goto(url);
-await page.waitForFunction(() => window.__INKTRACK__);
+await page.waitForFunction(() => window.__INKTRACK__?.mode?.car);
 await sleep(800);
 await page.screenshot({ path: 'screenshots/phase3-idle.png' });
 await page.keyboard.down('KeyW');
