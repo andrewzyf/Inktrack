@@ -145,3 +145,67 @@ matters: ~30 draws, < 25k tris, one pass. Real-device-class profiling
 **Colour management** is disabled on purpose: comic colours are authored as
 sRGB hex and shaded with flat multipliers in display space, so a "#ff4d5a"
 wall top is exactly that colour on screen.
+
+## Phase 4 — Track pieces, Rooftop Run, checkpoints
+
+**Built**
+- `src/tracks/pieces.js`: 13 modular prefabs on a 10 m grid with 2.5 m
+  height levels: straight, tight turn, wide curve, banked curve, slope, long
+  slope, jump ramp, loop (left/right lane-shift), boost pad, checkpoint, start,
+  finish. Each prefab declares footprint cells, height, connectors and
+  centre-line path segments. Pieces are undirected (a slope can be driven up
+  or down, a curve left or right), which is what lets the same prefabs work
+  in the editor. Any piece can take an `ice` surface.
+- `TrackBuilder.js`: placements → collision, chunked render geometry
+  (160 m chunks per material), a dense **racing line** from traversing
+  connectors (jump gaps are found by a look-ahead search), ordered checkpoint
+  gates, spawn, kill height and validation errors. Runs headless.
+- `Turtle.js`: tracks are authored as driving scripts
+  (`['bankRight'], ['ramp'], ['gap', 3, -2], ['loopLeft']…`) in
+  `src/tracks/data/*.js`. The turtle rejects overlapping layouts.
+- **Rooftop Run** (`data/rooftop-run.js`): 94 pieces, 1.2 km, 5 checkpoints.
+  Boost start, climb and leap across a street gap, banked plunge into a drift
+  chicane, a loop over the avenue, a second hop, a rolling hill run, and a
+  final jump to a boosted finish. Rooftop decor (`decor.js`): every track
+  cell sits on its own building, plus surrounding blocks with window
+  facades, parapets, chimneys, AC units, antennas, water towers, neon signs
+  and billboards (hand-lettered, canvas-drawn) and the street far below.
+  Gates have lettered START / CHECKPOINT / FINISH banners.
+- `Race.js`: countdown (3-2-1-GO), sequential checkpoints with split times,
+  **tick-accurate timer interpolated to the sub-tick crossing**, respawn at
+  the last checkpoint (keeping entry speed) after 0.9 s on falls, flips or
+  missed checkpoints, `R` = instant reset, `Enter` = restart. Finishing
+  requires every checkpoint in order.
+- `RaceSession.js` + `HUD.js` + `Impact.js`: comic HUD (mm:ss.mmm clock,
+  CP n/N, speedometer, tiered drift-boost meter, split delta) and starburst
+  impact bubbles (3/2/1/GO!, CHECK!, ZOOM!, VROOM!, SPLAT!, BONK!, WHAM!).
+- `Autopilot.js`: pure-pursuit driver with curvature-aware braking, used for
+  tests, verification and (Phase 9) the menu attract mode.
+
+**Verified**
+- `tests/phase4-tracks.test.js` (9 tests): every prefab builds; connector
+  ends are continuous with the route for every piece type; rotations; jumps
+  bridged; overlap rejection; **a full timed lap of Rooftop Run completes with
+  0 respawns** and checkpoints in order; countdown freezes the car; fall →
+  respawn at last checkpoint with the clock running; skipping a checkpoint →
+  "missed" + respawn; early finish crossing doesn't count.
+- Browser: `scripts/verify-phase4.mjs` drives the full lap with the
+  autopilot. It finished in **36.237 s**, identical to the headless run (the
+  simulation is deterministic). `scripts/shoot-at.mjs` freezes exact race
+  times for screenshots (loop, jumps, gates).
+
+**Issues found & fixed during verification**
+- `loopRight` double-negated its lane shift; the loop veered away from its
+  own exit (caught by the headless lap).
+- Hard side-hits could vault the 1 m visual wall. Collision barriers are now
+  2.4 m tall (invisible above the visible wall).
+- The offset chase camera clipped outside the loop at the top (black
+  screen). The camera now rides the car's own trail and pulls in when track
+  geometry blocks the view. This also shows drift angle nicely.
+- The first draft of the track was 14 s long, so I extended it to 1.2 km
+  (~36 s for the autopilot; a human should land around 35–45 s).
+
+**Budget**: Rooftop Run is ~74k render triangles in total (≈10k road, 47k
+decor, 16k facades) and 41 chunk meshes. A typical frame draws 50–70 calls
+and 70–110k triangles including outlines. Revisited in the Phase 9
+performance pass.

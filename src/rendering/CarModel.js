@@ -156,7 +156,11 @@ export function createCarModel({ ghost = false, color = CAR_COLORS.body, opacity
 
   const mk = (geo, mat, outline = true) => {
     const mesh = new Mesh(geo, mat);
-    if (outline) addOutline(mesh, outlineMat);
+    mesh.userData.sharedGeometry = true; // cached across cars — never dispose
+    if (outline) {
+      const hull = addOutline(mesh, outlineMat);
+      if (hull) hull.userData.sharedGeometry = true;
+    }
     return mesh;
   };
   body.add(mk(parts.body, bodyMat));

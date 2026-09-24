@@ -253,3 +253,156 @@ export function sparkTexture(size = 64) {
   ctx.stroke();
   return new CanvasTexture(c);
 }
+
+export const COMIC_FONT = "'Bangers', 'Impact', 'Arial Black', sans-serif";
+
+const FACADE_STYLES = {
+  // Windows on a white base (tinted per building by vertex colour).
+  rooftop: { base: '#ffffff', window: '#2e2647', lit: ['#ffe38a', '#ffd23f', '#9ff3ff'], litChance: 0.3, frame: '#141018' },
+  ruins: { base: '#ffffff', stone: true, frame: '#3d2c1a' },
+  frost: { base: '#ffffff', strata: true, frame: '#3b4a70' },
+};
+
+/** Tiling facade: a 4×4 grid of windows (or stone blocks / rock strata). */
+export function facadeTexture(style = 'rooftop', size = 256) {
+  const st = FACADE_STYLES[style] || FACADE_STYLES.rooftop;
+  const c = canvas(size, size);
+  const ctx = c.getContext('2d');
+  const rand = mulberry32(style.length * 131 + 5);
+  ctx.fillStyle = st.base;
+  ctx.fillRect(0, 0, size, size);
+  const cell = size / 4;
+  if (st.stone) {
+    ctx.strokeStyle = st.frame;
+    for (let r = 0; r < 4; r++) {
+      const y = r * cell;
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = '#000000';
+      for (let k = 0; k < 3; k++) ctx.fillRect(rand() * size, y + 4, 20 + rand() * 30, cell - 8);
+      ctx.globalAlpha = 1;
+      inkStroke(ctx, 0, y + 1, size, y + 1, 3, rand, 1.2);
+      const off = r % 2 ? cell / 2 : 0;
+      for (let k = 0; k <= 4; k++) inkStroke(ctx, off + k * cell, y, off + k * cell, y + cell, 2.5, rand, 1);
+    }
+    // Moss hints.
+    ctx.fillStyle = 'rgba(80,140,60,0.35)';
+    for (let i = 0; i < 12; i++) { ctx.beginPath(); ctx.arc(rand() * size, rand() * size, 4 + rand() * 10, 0, Math.PI * 2); ctx.fill(); }
+  } else if (st.strata) {
+    ctx.strokeStyle = st.frame;
+    for (let r = 0; r < 6; r++) {
+      const y = (r + 0.5) * (size / 6);
+      ctx.globalAlpha = 0.6;
+      inkStroke(ctx, 0, y, size, y + (rand() - 0.5) * 10, 2.2, rand, 4);
+    }
+    ctx.globalAlpha = 0.14;
+    ctx.fillStyle = '#1a2340';
+    for (let i = 0; i < 30; i++) ctx.fillRect(rand() * size, rand() * size, 2, 8 + rand() * 18);
+    ctx.globalAlpha = 1;
+  } else {
+    for (let gy = 0; gy < 4; gy++) {
+      for (let gx = 0; gx < 4; gx++) {
+        const x = gx * cell + 14, y = gy * cell + 12, w = cell - 28, h = cell - 24;
+        const lit = rand() < st.litChance;
+        ctx.fillStyle = lit ? pickColor(st.lit, rand) : st.window;
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = st.frame;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, w, h);
+        if (!lit) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+          ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(x + 4, y + h - 5); ctx.lineTo(x + w - 5, y + 4); ctx.stroke();
+        }
+      }
+    }
+  }
+  const tex = new CanvasTexture(c);
+  tex.wrapS = tex.wrapT = RepeatWrapping;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function pickColor(list, rand) {
+  return list[Math.floor(rand() * list.length) % list.length];
+}
+
+const SIGN_WORDS = {
+  rooftop: [['INK!', '#ff3d7f'], ['POW', '#ffd23f'], ['ZAP', '#3df2ff'], ['EAT', '#ff8a3d'], ['HOTEL', '#b86bff'], ['24H', '#7cff6b'], ['BAM!', '#ff4d5a'], ['RAMEN', '#ffe066']],
+  ruins: [['!', '#ffd23f'], ['?', '#7cff6b'], ['◆', '#ff8a3d'], ['▲', '#3df2ff'], ['☼', '#ffe066'], ['✦', '#ff3d7f'], ['●', '#b86bff'], ['■', '#ffffff']],
+  frost: [['SKI', '#3df2ff'], ['HOT COCOA', '#ff8a3d'], ['BRRR!', '#ffffff'], ['LODGE', '#ffd23f'], ['ICE!', '#7fd4ff'], ['SNOW', '#ffffff'], ['PEAK', '#ff3d7f'], ['YETI?', '#b86bff']],
+};
+
+/** 4×2 atlas of hand-lettered neon signs (text with ink outline on a dark panel). */
+export function signTexture(style = 'rooftop') {
+  const W = 1024, H = 512;
+  const c = canvas(W, H);
+  const ctx = c.getContext('2d');
+  const words = SIGN_WORDS[style] || SIGN_WORDS.rooftop;
+  const cw = W / 4, ch = H / 2;
+  words.forEach(([word, color], i) => {
+    const x = (i % 4) * cw, y = Math.floor(i / 4) * ch;
+    ctx.fillStyle = '#211a33';
+    ctx.fillRect(x, y, cw, ch);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 8;
+    ctx.strokeRect(x + 12, y + 12, cw - 24, ch - 24);
+    let size = 120;
+    ctx.font = `${size}px ${COMIC_FONT}`;
+    while (ctx.measureText(word).width > cw - 50 && size > 30) {
+      size -= 6;
+      ctx.font = `${size}px ${COMIC_FONT}`;
+    }
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = '#141018';
+    ctx.strokeText(word, x + cw / 2, y + ch / 2 + 6);
+    ctx.fillStyle = color;
+    ctx.fillText(word, x + cw / 2, y + ch / 2 + 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fillRect(x + 26, y + 26, 30, 8);
+  });
+  const tex = new CanvasTexture(c);
+  tex.anisotropy = 4;
+  return tex;
+}
+
+/** Gate banners: rows START (top), CHECKPOINT, FINISH (bottom). */
+export function bannerTexture() {
+  const W = 512, H = 384;
+  const c = canvas(W, H);
+  const ctx = c.getContext('2d');
+  const rows = [
+    ['START', '#ffffff', true],
+    ['CHECKPOINT', '#ffd23f', false],
+    ['FINISH', '#ffffff', true],
+  ];
+  rows.forEach(([text, color, checker], i) => {
+    const y = i * (H / 3), h = H / 3;
+    ctx.fillStyle = color;
+    ctx.fillRect(0, y, W, h);
+    if (checker) {
+      const s = h / 4;
+      ctx.fillStyle = '#141018';
+      for (let yy = 0; yy < 4; yy++) for (let xx = 0; xx < W / s; xx++) if ((xx + yy) % 2 === 0) ctx.fillRect(xx * s, y + yy * s, s, s);
+      ctx.fillStyle = color;
+      ctx.fillRect(W * 0.16, y + h * 0.12, W * 0.68, h * 0.76);
+    }
+    ctx.font = `${Math.round(h * 0.62)}px ${COMIC_FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = '#141018';
+    ctx.strokeText(text, W / 2, y + h / 2 + 4);
+    ctx.fillStyle = i === 1 ? '#ff4d5a' : '#ffd23f';
+    ctx.fillText(text, W / 2, y + h / 2 + 4);
+    ctx.fillStyle = '#141018';
+    ctx.fillRect(0, y, W, 6);
+    ctx.fillRect(0, y + h - 6, W, 6);
+  });
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(W - 12, 0, 12, 12); // plain texel for the banner sides (uv 0.99)
+  return new CanvasTexture(c);
+}

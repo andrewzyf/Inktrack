@@ -94,3 +94,32 @@ export function loopPath(start, dir, side, radius, shift) {
     },
   );
 }
+
+/** Wrap a path with a rigid transform (quaternion + offset). */
+export function transformPath(path, quaternion, offset) {
+  const q = quaternion.clone(), o = offset.clone();
+  return {
+    length: path.length,
+    frame(t, out) {
+      path.frame(t, out);
+      out.pos.applyQuaternion(q).add(o);
+      out.tangent.applyQuaternion(q);
+      out.up.applyQuaternion(q);
+      out.right.applyQuaternion(q);
+      return out;
+    },
+  };
+}
+
+/** Traverse a path backwards (tangent and right flip, up stays). */
+export function reversePath(path) {
+  return {
+    length: path.length,
+    frame(t, out) {
+      path.frame(1 - t, out);
+      out.tangent.negate();
+      out.right.negate();
+      return out;
+    },
+  };
+}

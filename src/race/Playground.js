@@ -91,6 +91,7 @@ export class Playground {
     this.prevQuat = new Quaternion();
     this.renderPos = new Vector3();
     this.renderQuat = new Quaternion();
+    stage.chase.world = world;
     this.respawn();
     this.offAction = input.onAction((action) => {
       if (action === 'reset') this.respawn();
