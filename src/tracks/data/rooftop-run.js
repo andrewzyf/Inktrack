@@ -54,7 +54,12 @@ export default {
     ['down2'],
     ['straight', 3],
     ['boost'],
-    ['straight', 8],
+    // Shortcut: the racing line drops into a hairpin around the block; the
+    // side lane hops the alley with a kicker ramp.
+    ['shortcut', 'right', {
+      main: [['left'], ['straight', 3], ['right'], ['right'], ['straight', 3], ['left']],
+      alt: [['ramp'], ['gap', 1, 0]],
+    }],
     ['bankLeft'], // → north
     ['straight', 3],
     ['cp'],
@@ -66,6 +71,20 @@ export default {
     ['straight', 1],
     ['ramp'],
     ['gap', 3, -2],
+    ['straight', 3],
+    ['boost'],
+    ['straight', 2],
+    ['cp'],
+    ['bankRight'], // → east, the tower finale
+    ['straight', 2],
+    ['up2'],
+    ['up2'],
+    ['straight', 2],
+    ['left'],
+    ['right'],
+    ['straight', 1],
+    ['ramp'],
+    ['gap', 3, -4], // tower drop
     ['straight', 3],
     ['boost'],
     ['straight', 2],

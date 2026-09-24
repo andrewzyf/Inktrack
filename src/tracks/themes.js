@@ -63,8 +63,95 @@ export const THEMES = {
       ],
     },
   },
+  canyon: {
+    id: 'canyon',
+    name: 'Red Canyon',
+    roadStyle: 'canyon',
+    facadeStyle: 'canyon',
+    light: { direction: [-0.4, 0.8, -0.35], midTint: 0xf2cfa3, shadowTint: 0xb86a4f, ink: 0x6b2f22 },
+    fog: { color: 0xffd3a1, near: 170, far: 600 },
+    palette: {
+      wallInner: 0xf2dcc0, wallTop: 0x2fb5a8, wallTopAlt: 0xfff1d8, wallOuter: 0xc48a60,
+      bottom: 0x5c2c1c, edge: 0x9a5a3a,
+    },
+    sky: {
+      top: 0x3f8fd6, horizon: 0xffd89a, bottom: 0x9a4a2a,
+      sun: { color: 0xfff1b0, azimuth: -2.2, elevation: 0.28, size: 0.1 },
+      layers: [
+        { type: 'clouds', radius: 820, height: 240, y: 170, color: '#fff4e0', shade: 'rgba(200,120,80,0.35)', repeat: 3, count: 4, drift: 0.003, pixelHeight: 256 },
+        { type: 'mesas', radius: 780, height: 240, y: -80, color: '#d9885a', band: 'rgba(150,60,30,0.35)', repeat: 2 },
+        { type: 'mesas', radius: 700, height: 170, y: -80, color: '#b3593a', band: 'rgba(110,40,20,0.4)', repeat: 3 },
+      ],
+    },
+  },
+  ocean: {
+    id: 'ocean',
+    name: 'Tropic Bay',
+    roadStyle: 'water',
+    facadeStyle: 'ruins',
+    vehicle: 'boat',
+    light: { direction: [0.45, 0.8, 0.3], midTint: 0xd8f0f0, shadowTint: 0x6fa9c9, ink: 0x1d4f7a },
+    fog: { color: 0xc9f1ff, near: 190, far: 650 },
+    palette: {
+      wallInner: 0xffffff, wallTop: 0xff5a4a, wallTopAlt: 0xffffff, wallOuter: 0xf7f2e6,
+      bottom: 0x7a5236, edge: 0x9b7050, road: 0xffffff,
+    },
+    sky: {
+      top: 0x2f9fe8, horizon: 0xdff8ff, bottom: 0x3aa0e4,
+      sun: { color: 0xfffbd0, azimuth: 0.9, elevation: 0.45, size: 0.09 },
+      layers: [
+        { type: 'clouds', radius: 820, height: 240, y: 150, color: '#ffffff', shade: 'rgba(90,160,220,0.35)', repeat: 3, count: 6, drift: 0.005, pixelHeight: 256 },
+        { type: 'islands', radius: 760, height: 160, y: -70, color: '#58b35a', leaves: '#2f8f4a', sea: '#3aa0e4', repeat: 2 },
+      ],
+    },
+  },
+  sky: {
+    id: 'sky',
+    name: 'Cloud Kingdom',
+    roadStyle: 'plain',
+    facadeStyle: 'ruins',
+    vehicle: 'plane',
+    light: { direction: [0.3, 0.85, 0.4], midTint: 0xe8e6ff, shadowTint: 0x9d93d9, ink: 0x4c3f99 },
+    fog: { color: 0xd8e6ff, near: 220, far: 760 },
+    palette: {},
+    sky: {
+      top: 0x6f7ef2, horizon: 0xffe2f1, bottom: 0xbfd2ff,
+      sun: { color: 0xfff6c9, azimuth: 2.0, elevation: 0.3, size: 0.08 },
+      layers: [
+        { type: 'clouds', radius: 820, height: 260, y: 120, color: '#ffffff', shade: 'rgba(140,130,220,0.35)', repeat: 3, count: 7, drift: 0.006, pixelHeight: 256 },
+        { type: 'clouds', radius: 740, height: 220, y: -40, color: '#fff3fb', shade: 'rgba(170,140,220,0.35)', repeat: 3, count: 8, drift: -0.004, pixelHeight: 256 },
+        { type: 'clouds', radius: 680, height: 200, y: -150, color: '#f1f0ff', shade: 'rgba(120,120,200,0.35)', repeat: 4, count: 9, drift: 0.003, pixelHeight: 256 },
+      ],
+    },
+  },
 };
+
+/** Theme ids players can pick in the editor, grouped by mode. */
+export const THEME_ORDER = ['rooftop', 'ruins', 'frost', 'canyon', 'ocean', 'sky'];
 
 export function getTheme(id) {
   return THEMES[id] || THEMES.rooftop;
+}
+
+/** A darkened "Night Ink" copy of a theme (mutator). */
+export function nightTheme(theme) {
+  const dim = (hex, k = 0.32, blue = 0.12) => {
+    const r = ((hex >> 16) & 255) / 255, g = ((hex >> 8) & 255) / 255, b = (hex & 255) / 255;
+    const to = (v) => Math.max(0, Math.min(255, Math.round(v * 255)));
+    return (to(r * k) << 16) | (to(g * k + blue * 0.3) << 8) | to(b * k + blue);
+  };
+  const dimCss = (css) => (typeof css === 'string' && /^#[0-9a-f]{6}$/i.test(css) ? '#' + dim(parseInt(css.slice(1), 16), 0.4, 0.1).toString(16).padStart(6, '0') : css);
+  return {
+    ...theme,
+    id: theme.id,
+    night: true,
+    light: { ...theme.light, midTint: dim(theme.light.midTint, 0.6, 0.15), shadowTint: dim(theme.light.shadowTint, 0.45, 0.15), ink: 0x0b0918 },
+    fog: { color: 0x14123a, near: theme.fog.near * 0.6, far: theme.fog.far * 0.75 },
+    sky: {
+      ...theme.sky,
+      top: 0x07061c, horizon: 0x2c2466, bottom: 0x0b0a20,
+      sun: { color: 0xf6f1c8, azimuth: theme.sky.sun.azimuth + 1, elevation: 0.4, size: 0.05 },
+      layers: theme.sky.layers.map((l) => Object.fromEntries(Object.entries(l).map(([k, v]) => [k, dimCss(v)]))),
+    },
+  };
 }

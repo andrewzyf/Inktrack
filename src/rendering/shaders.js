@@ -58,13 +58,14 @@ export const toonFragment = /* glsl */ `
   uniform float uShine;
   #ifdef USE_MAP
     uniform sampler2D map;
+    uniform vec2 uMapOffset;
   #endif
   ${commonVertex}
 
   void main() {
     vec3 base = uColor * vColor;
     #ifdef USE_MAP
-      base *= texture2D(map, vUv).rgb;
+      base *= texture2D(map, vUv + uMapOffset).rgb;
     #endif
     vec3 N = normalize(vNormal);
     #ifdef DOUBLE_SIDED

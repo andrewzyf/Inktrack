@@ -187,6 +187,55 @@ const painters = {
       ctx.fillRect(cx - s * 2.2, cy + s * 0.25, s * 4.4, 4);
     }
   },
+  mesas(ctx, W, H, o, rand) {
+    // Flat-topped buttes with striped strata.
+    let x = -40;
+    while (x < W + 40) {
+      const w = 90 + rand() * 180, top = H * (0.25 + rand() * 0.35), slope = 18 + rand() * 20;
+      inked(ctx, o.color, 4.5, (c) => {
+        c.moveTo(x - slope, H + 5);
+        c.lineTo(x, top);
+        c.lineTo(x + w, top);
+        c.lineTo(x + w + slope, H + 5);
+      });
+      ctx.fillStyle = o.band || 'rgba(120,40,20,0.35)';
+      for (let b = top + 18; b < H; b += 22 + rand() * 10) ctx.fillRect(x + 4, b, w - 8, 5);
+      halftoneRect(ctx, x + w * 0.55, top + 6, w * 0.45, H - top, 'rgba(60,20,20,0.3)', 9);
+      x += w + slope * 2 + rand() * 120;
+    }
+  },
+  islands(ctx, W, H, o, rand) {
+    let x = 40 + rand() * 100;
+    while (x < W - 60) {
+      const w = 60 + rand() * 140, h = 22 + rand() * 40;
+      inked(ctx, o.color, 4, (c) => {
+        c.moveTo(x - w / 2, H * 0.92);
+        c.quadraticCurveTo(x, H * 0.92 - h * 2, x + w / 2, H * 0.92);
+        c.closePath();
+      });
+      const palms = 1 + Math.floor(rand() * 3);
+      for (let i = 0; i < palms; i++) {
+        const px = x + (rand() - 0.5) * w * 0.4, py = H * 0.92 - h * 0.9;
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.quadraticCurveTo(px + 8, py - 25, px + 4, py - 45);
+        ctx.stroke();
+        for (let k = 0; k < 5; k++) {
+          const a = -Math.PI / 2 + (k - 2) * 0.6;
+          inked(ctx, o.leaves || '#2f9e57', 3, (c) => {
+            c.moveTo(px + 4, py - 45);
+            c.quadraticCurveTo(px + 4 + Math.cos(a) * 20, py - 45 + Math.sin(a) * 20 - 8, px + 4 + Math.cos(a) * 34, py - 45 + Math.sin(a) * 30 + 12);
+            c.quadraticCurveTo(px + 4 + Math.cos(a) * 16, py - 45 + Math.sin(a) * 12, px + 4, py - 45);
+          });
+        }
+      }
+      x += w + 150 + rand() * 250;
+    }
+    ctx.fillStyle = o.sea || '#3aa0e4';
+    ctx.fillRect(0, H * 0.92, W, H * 0.08);
+  },
   hills(ctx, W, H, o, rand) {
     inked(ctx, o.color, 4, (c) => {
       c.moveTo(-10, H);

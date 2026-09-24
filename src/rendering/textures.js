@@ -44,6 +44,8 @@ const ROAD_STYLES = {
   frost: { base: '#e9f1fb', dark: '#c3d3ea', line: '#5f8fd6', center: null, hatch: '#6c86b3', tracks: true },
   ice: { base: '#bfe9ff', dark: '#8fd3f5', line: '#ffffff', center: null, hatch: '#4aa3d8', cracks: true },
   plain: { base: '#8c8aa0', dark: '#707088', line: '#ffffff', center: '#ffd23f', hatch: '#2b2838', centerDash: true },
+  canyon: { base: '#c8693f', dark: '#a9512f', line: '#ffe8c2', center: '#fff2d6', hatch: '#5c2412', centerDash: true, tracks: true },
+  water: { base: '#2c8fdc', dark: '#1d70c0', line: '#ffffff', center: null, hatch: '#0d3f80', waves: true },
   boost: { base: '#ff7a1a', dark: '#ff9a3c', line: '#fff2a8', center: null, hatch: '#8a2c00', chevrons: true },
 };
 
@@ -98,6 +100,25 @@ export function roadTexture(styleName = 'rooftop', size = 256) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x + (rand() - 0.5) * 3, size);
       ctx.stroke();
+    }
+  }
+  if (st.waves) {
+    // Comic wave crests: little white "smile" strokes with ink under-lines.
+    for (let i = 0; i < 26; i++) {
+      const x = 18 + rand() * (W - 36), y = rand() * size, r = 6 + rand() * 7;
+      wrapY(size, y, (o) => {
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#0d3f80';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(x, y + o + 1.5, r, Math.PI * 1.15, Math.PI * 1.85);
+        ctx.stroke();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.arc(x, y + o, r, Math.PI * 1.15, Math.PI * 1.85);
+        ctx.stroke();
+      });
     }
   }
   if (st.chevrons) {
@@ -261,6 +282,7 @@ const FACADE_STYLES = {
   rooftop: { base: '#ffffff', window: '#2e2647', lit: ['#ffe38a', '#ffd23f', '#9ff3ff'], litChance: 0.3, frame: '#141018' },
   ruins: { base: '#ffffff', stone: true, frame: '#3d2c1a' },
   frost: { base: '#ffffff', strata: true, frame: '#3b4a70' },
+  canyon: { base: '#ffffff', strata: true, bands: true, frame: '#6b2a18' },
 };
 
 /** Tiling facade: a 4×4 grid of windows (or stone blocks / rock strata). */
@@ -288,6 +310,13 @@ export function facadeTexture(style = 'rooftop', size = 256) {
     ctx.fillStyle = 'rgba(80,140,60,0.35)';
     for (let i = 0; i < 12; i++) { ctx.beginPath(); ctx.arc(rand() * size, rand() * size, 4 + rand() * 10, 0, Math.PI * 2); ctx.fill(); }
   } else if (st.strata) {
+    if (st.bands) {
+      // Sandstone: alternating pale / dark layers.
+      for (let r = 0; r < 6; r++) {
+        ctx.fillStyle = r % 2 ? 'rgba(255,230,200,0.35)' : 'rgba(120,40,20,0.16)';
+        ctx.fillRect(0, r * (size / 6), size, size / 6);
+      }
+    }
     ctx.strokeStyle = st.frame;
     for (let r = 0; r < 6; r++) {
       const y = (r + 0.5) * (size / 6);
@@ -405,4 +434,44 @@ export function bannerTexture() {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(W - 12, 0, 12, 12); // plain texel for the banner sides (uv 0.99)
   return new CanvasTexture(c);
+}
+
+/** Tileable open-sea texture (both axes repeat) for the ocean plane. */
+export function seaTexture(size = 256) {
+  const c = canvas(size, size);
+  const ctx = c.getContext('2d');
+  const rand = mulberry32(4242);
+  ctx.fillStyle = '#3aa0e4';
+  ctx.fillRect(0, 0, size, size);
+  const wrap = (x, y, fn) => {
+    for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) fn(x + ox, y + oy);
+  };
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = '#2a86cf';
+  for (let i = 0; i < 18; i++) {
+    const x = rand() * size, y = rand() * size, r = 14 + rand() * 30;
+    wrap(x, y, (px, py) => { ctx.beginPath(); ctx.ellipse(px, py, r, r * 0.5, 0, 0, Math.PI * 2); ctx.fill(); });
+  }
+  ctx.globalAlpha = 1;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 30; i++) {
+    const x = rand() * size, y = rand() * size, r = 5 + rand() * 8;
+    wrap(x, y, (px, py) => {
+      ctx.strokeStyle = '#155a9e';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(px, py + 1.5, r, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(px, py, r, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+    });
+  }
+  const tex = new CanvasTexture(c);
+  tex.wrapS = tex.wrapT = RepeatWrapping;
+  tex.anisotropy = 4;
+  tex.minFilter = LinearMipmapLinearFilter;
+  return tex;
 }

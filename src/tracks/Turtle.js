@@ -16,15 +16,19 @@ export function runTurtle(script, { x = 0, z = 0, level = 0, dir = 0 } = {}, { p
   const pieces = [];
   const resolved = [];
   let ice = false;
+  let shortcutId = null;
+  let shortcuts = 0;
 
-  const place = (type, want = () => true, label = type) => {
+  const place = (type, want = () => true, label = type, onlyEntry = null) => {
     const def = getPiece(type);
     for (let ci = 0; ci < def.connectors.length; ci++) {
+      if (onlyEntry != null && ci !== onlyEntry) continue;
       const c = def.connectors[ci];
       const r = (((opposite(cur.dir) - c.dir) % 4) + 4) % 4;
       const [rx, rz] = rotateCell(c.x, c.z, r);
       const p = { t: type, x: cur.x - rx, y: cur.level - c.level, z: cur.z - rz, r };
       if (ice && type !== 'boost') p.s = 'ice';
+      if (shortcutId != null) p.sc = shortcutId;
       const rp = resolvePlacement(p, pieces.length);
       const exit = rp.connectors.find((k) => k.index !== ci);
       const exitDir = exit ? exit.dir : (def.launch.dir + r) % 4;
@@ -51,6 +55,49 @@ export function runTurtle(script, { x = 0, z = 0, level = 0, dir = 0 } = {}, { p
       return p;
     }
     throw new Error(`Turtle: no orientation of "${type}" satisfies "${label}"`);
+  };
+
+  /**
+   * ['shortcut', 'left'|'right', { main: [...], alt: [...] }]: a fork whose
+   * side lane runs `alt` while the racing line runs `main`; both must arrive
+   * side by side (alt on the same side) where a merge joins them again.
+   */
+  const shortcut = (side, { main, alt }) => {
+    const id = shortcuts++;
+    const fork = place(side === 'right' ? 'forkRight' : 'fork', () => true, 'shortcut', 0);
+    const frp = resolvePlacement(fork);
+    const ac = frp.connectors[2];
+    const [adx, adz] = DIRS[ac.dir];
+    const altCur = { x: ac.cx + adx, z: ac.cz + adz, level: ac.level, dir: ac.dir };
+    for (const st of main) runStep(st);
+    const mainCur = { ...cur };
+    Object.assign(cur, altCur);
+    shortcutId = id;
+    for (const st of alt) runStep(st);
+    shortcutId = null;
+    const altEnd = { ...cur };
+    Object.assign(cur, mainCur);
+    for (const type of ['fork', 'forkRight']) {
+      const def = getPiece(type);
+      for (let r = 0; r < 4; r++) {
+        const c1 = def.connectors[1];
+        if ((c1.dir + r) % 4 !== opposite(cur.dir)) continue;
+        const [rx, rz] = rotateCell(c1.x, c1.z, r);
+        const p = { t: type, x: cur.x - rx, y: cur.level - c1.level, z: cur.z - rz, r };
+        if (ice) p.s = 'ice';
+        const rp = resolvePlacement(p, pieces.length);
+        const c2 = rp.connectors[2];
+        if (c2.cx !== altEnd.x || c2.cz !== altEnd.z || c2.level !== altEnd.level || c2.dir !== opposite(altEnd.dir)) continue;
+        if (overlaps(buildOccupancy(resolved), rp)) throw new Error(`Turtle: shortcut ${id} merge overlaps existing track`);
+        pieces.push(p);
+        resolved.push(rp);
+        const exit = rp.connectors[0];
+        const [dx, dz] = DIRS[exit.dir];
+        Object.assign(cur, { x: exit.cx + dx, z: exit.cz + dz, level: exit.level, dir: exit.dir });
+        return;
+      }
+    }
+    throw new Error(`Turtle: shortcut ${id} lanes don't meet — main ends at (${mainCur.x}, ${mainCur.z}) L${mainCur.level} dir ${mainCur.dir}, alt at (${altEnd.x}, ${altEnd.z}) L${altEnd.level} dir ${altEnd.dir}`);
   };
 
   const turn = (k) => (d) => d === (cur.dir + k) % 4;
@@ -96,6 +143,7 @@ export function runTurtle(script, { x = 0, z = 0, level = 0, dir = 0 } = {}, { p
         break;
       }
       case 'ice': ice = a !== false; break;
+      case 'shortcut': shortcut(a, b); break;
       default: throw new Error(`Turtle: unknown command "${cmd}"`);
     }
   }

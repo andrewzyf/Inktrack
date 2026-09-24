@@ -1,6 +1,9 @@
 import { Vector3, Quaternion } from 'three';
 import { PHYSICS } from '../config/physics.js';
 import { CarPhysics } from '../physics/CarPhysics.js';
+import { FlightPhysics } from '../physics/FlightPhysics.js';
+import { physicsFor, flightFor } from '../vehicles/profiles.js';
+import { TILE } from '../tracks/constants.js';
 
 /**
  * Race rules, independent of rendering (runs headless in tests):
@@ -18,10 +21,14 @@ const _seg = new Vector3();
 const _f = new Vector3();
 
 export class Race {
-  constructor(track, { tickRate = PHYSICS.tickRate } = {}) {
+  constructor(track, { tickRate = PHYSICS.tickRate, mutators = [] } = {}) {
     this.track = track;
     this.tickRate = tickRate;
-    this.car = new CarPhysics(track.world);
+    this.vehicle = track.vehicle || 'car';
+    this.flying = this.vehicle === 'plane';
+    this.car = this.flying
+      ? new FlightPhysics(track.obstacles || [], flightFor(mutators))
+      : new CarPhysics(track.world, physicsFor(this.vehicle, mutators));
     this.prevPos = new Vector3();
     this.prevQuat = new Quaternion();
     this.events = [];
@@ -30,7 +37,9 @@ export class Race {
 
   restart() {
     const s = this.track.start.spawn;
+    this.car.hold = this.flying;
     this.car.reset(s.pos, s.quat);
+    this.routeIndex = 0;
     this.prevPos.copy(this.car.position);
     this.prevQuat.copy(this.car.quaternion);
     this.state = 'countdown';
@@ -43,6 +52,8 @@ export class Race {
     this.respawnReason = null;
     this.respawns = 0;
     this.lastSpawn = { pos: s.pos.clone(), quat: s.quat.clone(), speed: 0 };
+    this.potsTaken = new Set();
+    this.shortcutsTaken = new Set();
     this.events.length = 0;
     this.emit('restart');
   }
@@ -78,6 +89,13 @@ export class Race {
     this.respawnTimer = 0;
     this.respawnReason = null;
     this.respawns++;
+    if (this.flying) {
+      let best = Infinity;
+      this.track.route.forEach((p, i) => {
+        const d = p.pos.distanceToSquared(sp.pos);
+        if (d < best) { best = d; this.routeIndex = i; }
+      });
+    }
     this.emit('respawn', { reason });
   }
 
@@ -104,6 +122,10 @@ export class Race {
       }
       car.step(dt, NO_INPUT); // settle on the suspension, no driving
       if (remaining <= 0) {
+        if (this.flying) {
+          this.car.hold = false;
+          this.car.reset(car.position, car.quaternion);
+        }
         this.state = 'racing';
         this.stateTicks = 0;
         this._lastBeat = null;
@@ -131,10 +153,53 @@ export class Race {
 
     this._checkGates();
     if (this.state !== 'racing') return;
+    this._checkExtras();
 
-    if (car.position.y < this.track.killY) this.fail('fall');
+    if (this.flying) this._checkFlight();
+    else if (car.position.y < this.track.killY) this.fail('fall');
     else if (car.flippedTime > 1.0) this.fail('flip');
     else if (car.airTime > 6) this.fail('fall');
+  }
+
+  /** Planes: obstacle crashes, straying off the course, boost rings. */
+  _checkFlight() {
+    const car = this.car;
+    if (car.crashed) return this.fail('crash');
+    if (car.position.y < this.track.killY) return this.fail('fall');
+    const route = this.track.route;
+    // Track progress along the course with a sliding window search.
+    let best = Infinity, bi = this.routeIndex;
+    const lo = Math.max(0, this.routeIndex - 20), hi = Math.min(route.length - 1, this.routeIndex + 60);
+    for (let i = lo; i <= hi; i++) {
+      const d = route[i].pos.distanceToSquared(car.position);
+      if (d < best) { best = d; bi = i; }
+    }
+    this.routeIndex = bi;
+    if (best > 55 * 55) return this.fail('lost');
+    for (const ring of this.track.boostRings || []) {
+      if (ring.pos.distanceToSquared(car.position) < ring.radius * ring.radius) car.addBoost(1.2);
+    }
+  }
+
+  /** Ink pots and shortcut discovery. */
+  _checkExtras() {
+    const pos = this.car.position;
+    const pots = this.track.pots || [];
+    for (let i = 0; i < pots.length; i++) {
+      if (this.potsTaken.has(i)) continue;
+      if (pots[i].pos.distanceToSquared(pos) < 3.2 * 3.2) {
+        this.potsTaken.add(i);
+        this.emit('pot', { id: pots[i].id, count: this.potsTaken.size, total: pots.length });
+      }
+    }
+    const cells = this.track.shortcutCells;
+    if (cells && cells.size) {
+      const c = cells.get(`${Math.round(pos.x / TILE)},${Math.round(pos.z / TILE)}`);
+      if (c && !this.shortcutsTaken.has(c.id) && pos.y > c.minY && pos.y < c.maxY) {
+        this.shortcutsTaken.add(c.id);
+        this.emit('shortcut', { id: c.id });
+      }
+    }
   }
 
   _crossing(gate) {
@@ -146,7 +211,7 @@ export class Race {
       _p.copy(_seg.subVectors(b, a)).multiplyScalar(f).add(a).sub(gate.center);
       const lateral = Math.abs(_p.dot(gate.right));
       const h = _p.dot(gate.up);
-      if (lateral <= gate.halfWidth && h > -1.5 && h < gate.height) return { f, forward: d1 > d0 };
+      if (gate.ring ? Math.hypot(lateral, h) <= gate.radius : lateral <= gate.halfWidth && h > -1.5 && h < gate.height) return { f, forward: d1 > d0 };
     }
     return null;
   }

@@ -16,6 +16,7 @@ const _p = new Vector3();
 
 const WHEEL_RADIUS = 0.37;
 const DRIFT_TIER_COLORS = [0x6fd6ff, 0xffa53d, 0xff5fd2];
+const _rainbow = new Color();
 
 /**
  * Visual side of the player car: interpolated transform, wheel spin/steer,
@@ -23,8 +24,13 @@ const DRIFT_TIER_COLORS = [0x6fd6ff, 0xffa53d, 0xff5fd2];
  * skid marks and smoke/spark particles.
  */
 export class CarView {
-  constructor({ scene, world, particles, skids }) {
-    this.model = createCarModel();
+  constructor({ scene, world, particles, skids, look = null, scale = 1 }) {
+    this.model = createCarModel({ look });
+    this.kind = this.model.userData.kind;
+    this.trail = look?.trail || null;
+    this.scale = scale;
+    this.model.scale.setScalar(scale);
+    this.time = 0;
     this.world = world;
     this.particles = particles;
     this.skids = skids;
@@ -62,11 +68,27 @@ export class CarView {
     this.skids.clear();
   }
 
+  /** Exhaust / trail colour (rainbow cycles). */
+  trailColor() {
+    const t = this.trail;
+    if (!t) return 0xffb13d;
+    if (t.color == null) return _rainbow.setHSL((this.time * 0.8) % 1, 0.9, 0.6).getHex();
+    return t.id === 'smoke' ? 0xffb13d : t.color;
+  }
+
   update(dt, car, pos, quat) {
     const m = this.model;
+    this.time += dt;
     m.position.copy(pos);
     m.quaternion.copy(quat);
+    if (this.scale !== 1) {
+      // Keep a scaled-down vehicle sitting on the road.
+      _up.set(0, 1, 0).applyQuaternion(quat);
+      m.position.addScaledVector(_up, -PHYSICS.car.rideHeight * (1 - this.scale) * (this.kind === 'plane' ? 0 : 1));
+    }
     const { body, wheels } = m.userData;
+    if (this.kind === 'boat') return this._updateBoat(dt, car, pos, quat);
+    if (this.kind === 'plane') return this._updatePlane(dt, car, pos, quat);
 
     // Wheels: spin with road speed, front pair steers, suspension droop from rays.
     this.spin += (car.grounded ? car.forwardSpeed : car.forwardSpeed * 0.98) * dt / WHEEL_RADIUS;
@@ -99,6 +121,82 @@ export class CarView {
 
     this._updateShadow(car, pos, quat);
     this._updateEffects(dt, car, pos, quat);
+  }
+
+  _updateBoat(dt, car, pos, quat) {
+    const { body } = this.model.userData;
+    const speed = Math.abs(car.forwardSpeed);
+    // Bob on the swell, plane the nose up with speed, lean into turns.
+    const bob = car.grounded ? Math.sin(this.time * 2.3) * 0.06 + Math.sin(this.time * 3.7) * 0.03 : 0;
+    const pitchTarget = car.grounded ? -Math.min(0.12, speed / 55 * 0.12) + Math.sin(this.time * 1.9) * 0.02 : 0;
+    const rollTarget = car.grounded ? Math.max(-0.2, Math.min(0.2, -car.steer * Math.min(1, speed / 25) * 0.14 + car.lateralSpeed * 0.01)) : 0;
+    this.roll += (rollTarget - this.roll) * Math.min(1, dt * 5);
+    this.pitch += (pitchTarget - this.pitch) * Math.min(1, dt * 4);
+    this.squashVel += (-this.squash * 120 - this.squashVel * 8) * dt;
+    this.squash += this.squashVel * dt;
+    const sq = Math.max(-0.3, Math.min(0.25, this.squash));
+    body.scale.set(1 - sq * 0.3, 1 + sq, 1 - sq * 0.2);
+    body.position.y = bob + sq * 0.3;
+    body.rotation.set(this.pitch, 0, this.roll);
+    this._updateShadow(car, pos, quat);
+    this.skids.update(0, false);
+    this.skids.update(1, false);
+
+    // Wake: foam puffs from the stern, spray sheets when sliding.
+    this.puffTimer -= dt;
+    if (car.grounded && speed > 4 && this.puffTimer <= 0) {
+      this.puffTimer = car.drifting ? 0.03 : 0.06;
+      _f.set(0, 0, 1).applyQuaternion(quat);
+      _up.set(0, 1, 0).applyQuaternion(quat);
+      const r = _v.set(1, 0, 0).applyQuaternion(quat);
+      for (const side of [-1, 1]) {
+        _p.copy(pos).addScaledVector(_f, -2.4).addScaledVector(r, side * 0.8).addScaledVector(_up, -0.5);
+        const spray = car.drifting ? 5 : 2;
+        const vel = new Vector3().copy(r).multiplyScalar(side * spray).addScaledVector(_up, 1.2 + (car.drifting ? 2 : 0)).addScaledVector(car.velocity, 0.2);
+        this.particles.spawn({ pos: _p, vel, life: 0.6, size: [0.4, 1.1 + speed * 0.012], color: 0xf2fbff, drag: 3, rise: 0.2 });
+      }
+    }
+    this._sparksAndBoost(dt, car, pos, quat, -2.8);
+  }
+
+  _updatePlane(dt, car, pos, quat) {
+    const { body, propeller } = this.model.userData;
+    if (propeller) propeller.rotation.z += dt * (25 + car.speed * 0.8);
+    this.squashVel += (-this.squash * 120 - this.squashVel * 8) * dt;
+    this.squash += this.squashVel * dt;
+    body.position.y = Math.sin(this.time * 1.7) * 0.05;
+    body.rotation.set(0, 0, 0);
+    this.shadow.visible = false;
+    // Wingtip contrails when boosting or banking hard.
+    this.puffTimer -= dt;
+    if ((car.boosting || car.drifting) && this.puffTimer <= 0) {
+      this.puffTimer = 0.035;
+      const r = _v.set(1, 0, 0).applyQuaternion(quat);
+      _f.set(0, 0, 1).applyQuaternion(quat);
+      for (const side of [-1, 1]) {
+        _p.copy(pos).addScaledVector(r, side * 3.6).addScaledVector(_f, -0.2);
+        this.particles.spawn({ pos: _p, vel: _n.copy(car.velocity).multiplyScalar(0.85), life: 0.6, size: [0.35, 0.9], color: car.boosting ? this.trailColor() : 0xffffff, drag: 0.5, rise: 0 });
+      }
+    }
+    this._sparksAndBoost(dt, car, pos, quat, -3.1);
+  }
+
+  /** Drift sparks (meter tier) + boost exhaust, shared by boats and planes. */
+  _sparksAndBoost(dt, car, pos, quat, tail) {
+    this.sparkTimer -= dt;
+    _f.set(0, 0, 1).applyQuaternion(quat);
+    if (car.drifting && car.driftMeter > 0.2 && this.sparkTimer <= 0) {
+      this.sparkTimer = 0.05;
+      const tier = car.driftMeter < 0.5 ? 0 : car.driftMeter < 0.85 ? 1 : 2;
+      _p.copy(pos).addScaledVector(_f, tail * 0.8);
+      _v.set((Math.random() - 0.5) * 4, 2 + Math.random() * 2, (Math.random() - 0.5) * 4).addScaledVector(car.velocity, 0.4);
+      this.particles.spawn({ pos: _p, vel: _v, life: 0.35, size: [0.5, 0.2], color: DRIFT_TIER_COLORS[tier], frame: SPARK, drag: 4, rise: -6, spin: 8 });
+    }
+    if (car.boosting && Math.random() < dt * 40) {
+      _p.copy(pos).addScaledVector(_f, tail);
+      _v.copy(car.velocity).multiplyScalar(0.9).addScaledVector(_f, -3);
+      this.particles.spawn({ pos: _p, vel: _v, life: 0.22, size: [0.45, 0.9], color: this.trailColor(), frame: PUFF, drag: 1, rise: 0 });
+    }
   }
 
   _updateShadow(car, pos, quat) {
@@ -150,7 +248,7 @@ export class CarView {
         if (!w.contact) continue;
         _v.copy(car.velocity).multiplyScalar(-0.15);
         _v.y += 1.5;
-        this.particles.spawn({ pos: _p.copy(w.hit.point).addScaledVector(w.hit.normal, 0.3), vel: _v, life: 0.7, size: [0.6, 2.0], color: 0xffffff, drag: 3, rise: 1.4 });
+        this.particles.spawn({ pos: _p.copy(w.hit.point).addScaledVector(w.hit.normal, 0.3), vel: _v, life: 0.7, size: [0.6, 2.0], color: this.trail && this.trail.id !== 'smoke' ? this.trailColor() : 0xffffff, drag: 3, rise: 1.4 });
       }
     }
 
@@ -173,7 +271,7 @@ export class CarView {
       _p.copy(pos).addScaledVector(_f, -2.3).addScaledVector(_up.set(0, 1, 0).applyQuaternion(quat), 0.05);
       // Mostly travel with the car so the flame puffs stay behind it, not in the lens.
       _v.copy(car.velocity).multiplyScalar(0.9).addScaledVector(_f, -3);
-      this.particles.spawn({ pos: _p, vel: _v, life: 0.2, size: [0.45, 0.9], color: 0xffb13d, frame: PUFF, drag: 1, rise: 0 });
+      this.particles.spawn({ pos: _p, vel: _v, life: 0.2, size: [0.45, 0.9], color: this.trailColor(), frame: PUFF, drag: 1, rise: 0 });
     }
   }
 

@@ -71,6 +71,37 @@ function loopPiece(side) {
   };
 }
 
+/**
+ * Fork / merge: a 2×3 plaza that splits one road into the main lane and a
+ * side lane (a shortcut). Drive it backwards and it's a merge. `side` is the
+ * alt lane's local x (+1 = driver's left when entering at connector 0).
+ * Segments tagged `lane` render and collide but aren't part of the racing line.
+ */
+function forkPiece(side) {
+  const X = TILE * side;
+  const inner = side > 0 ? [false, true] : [true, false]; // open toward the alt lane
+  const outer = side > 0 ? [true, false] : [false, true];
+  return {
+    name: side > 0 ? 'Fork (left)' : 'Fork (right)',
+    category: 'road',
+    cells: [[0, 0], [0, 1], [0, 2], [side, 0], [side, 1], [side, 2]],
+    height: 2,
+    connectors: [
+      { x: 0, z: 0, dir: 2, level: 0 },
+      { x: 0, z: 2, dir: 0, level: 0 },
+      { x: side, z: 2, dir: 0, level: 0 },
+    ],
+    segments: () => [
+      road(linePath(V(0, 0, -H), V(0, 0, TILE + H)), { walls: inner, spacing: 2 }),
+      road(linePath(V(0, 0, TILE + H), V(0, 0, 2 * TILE + H))),
+      road(createPath((t, o) => o.set(X * ease(t), 0, -H + 2 * TILE * t)), { walls: outer, spacing: 1.25, lane: 'alt' }),
+      road(linePath(V(X, 0, TILE + H), V(X, 0, 2 * TILE + H)), { lane: 'alt' }),
+      // Divider island between the two lanes.
+      road(linePath(V(X / 2, 0, 9), V(X / 2, 0, TILE + H)), { lane: 'median', width: 1.6, median: true }),
+    ],
+  };
+}
+
 export const PIECES = {
   straight: {
     name: 'Straight',
@@ -186,9 +217,11 @@ export const PIECES = {
   },
   loop: loopPiece(1),
   loopRight: loopPiece(-1),
+  fork: forkPiece(1),
+  forkRight: forkPiece(-1),
 };
 
-export const PIECE_ORDER = ['straight', 'turn', 'curve', 'bank', 'slope', 'slopeLong', 'ramp', 'loop', 'loopRight', 'boost', 'checkpoint', 'start', 'finish'];
+export const PIECE_ORDER = ['straight', 'turn', 'curve', 'bank', 'slope', 'slopeLong', 'ramp', 'loop', 'loopRight', 'fork', 'forkRight', 'boost', 'checkpoint', 'start', 'finish'];
 
 export function getPiece(type) {
   const p = PIECES[type];

@@ -5,7 +5,7 @@ import { SkidMarks } from './SkidMarks.js';
 import { SpeedLines } from './SpeedLines.js';
 import { ChaseCamera } from './ChaseCamera.js';
 import { setFog, setLight } from './materials.js';
-import { puffTexture, sparkTexture, blobShadowTexture, roadTexture } from './textures.js';
+import { puffTexture, sparkTexture, blobShadowTexture, roadTexture, seaTexture } from './textures.js';
 import { QUALITY_PRESETS } from './Renderer.js';
 
 /**
@@ -47,6 +47,11 @@ export class Stage {
     return this.textures.roads[style];
   }
 
+  seaTexture() {
+    if (!this.textures.sea) this.textures.sea = seaTexture();
+    return this.textures.sea;
+  }
+
   setTheme(theme, seed = 1) {
     this.theme = theme;
     this.sky.setTheme(theme.sky, seed);
@@ -76,6 +81,13 @@ export class Stage {
     this.chase.aspect = r.aspect;
     this.sky.update(dt, r.camera, r.pixelRatio);
     this.particles.update(dt);
+    // Flowing water: lanes stream along the direction of travel, the sea drifts.
+    const water = this.textures.roads.water;
+    if (water) water.offset.y = (water.offset.y - dt * 0.35) % 1;
+    if (this.textures.sea) {
+      this.textures.sea.offset.x = (this.textures.sea.offset.x + dt * 0.012) % 1;
+      this.textures.sea.offset.y = (this.textures.sea.offset.y + dt * 0.02) % 1;
+    }
     this.speedLines.update(dt, fx.speedLines ?? 0, r.aspect, fx.speedLineColor ?? null);
     r.updateViewport(r.camera);
     r.render(this.scene, r.camera);

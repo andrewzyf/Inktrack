@@ -9,6 +9,9 @@ import { Menus } from '../ui/Menus.js';
 import { RaceSession } from '../race/RaceSession.js';
 import { Playground } from '../race/Playground.js';
 import { STARTER_TRACKS } from '../tracks/starterTracks.js';
+import { buildTrack } from '../tracks/TrackBuilder.js';
+import { Showroom } from '../ui/Showroom.js';
+import { getLook } from '../vehicles/garage.js';
 import { getTheme } from '../tracks/themes.js';
 import { trackKey, getRecords, getBest, submitTime, saveGhost, loadGhost, clearRecords } from '../storage/records.js';
 import { getSettings } from '../storage/settings.js';
@@ -18,6 +21,9 @@ import { Editor } from '../editor/Editor.js';
 import { TouchControls, hasTouch } from '../input/Touch.js';
 import { Sfx } from '../audio/Sfx.js';
 import { songForTheme } from '../audio/songs.js';
+import { trackProgress, collectPot, discoverShortcut, medalFor, medalTimes, awardMedal, MEDALS, completeDaily, dailyDone, inkWallet } from '../storage/progress.js';
+import { getDaily, dailyMet } from '../race/daily.js';
+import { vehicleForTheme } from '../vehicles/profiles.js';
 
 /**
  * Top-level state machine. Owns the renderer, the shared Stage, input, the
@@ -144,9 +150,25 @@ export class App {
   // ── tracks & records ────────────────────────────────────────────────
   /** Every raceable track (built-ins, then custom), with a stable `ref`. */
   listTracks() {
-    const list = STARTER_TRACKS.map((t) => ({ ...t, ref: t.id, themeName: getTheme(t.theme).name }));
-    for (const t of this.customTracks?.() || []) list.push({ ...t, ref: `custom:${t.id}`, themeName: getTheme(t.theme).name });
+    const list = STARTER_TRACKS.map((t) => ({ ...t, ref: t.id, themeName: getTheme(t.theme).name, vehicle: vehicleForTheme(t.theme) }));
+    for (const t of this.customTracks?.() || []) list.push({ ...t, ref: `custom:${t.id}`, themeName: getTheme(t.theme).name, vehicle: vehicleForTheme(t.theme) });
+    for (const t of list) Object.assign(t, this._trackInfo(t));
     return list;
+  }
+
+  /** Pot / shortcut counts per layout (cheap route-only build, cached). */
+  _trackInfo(t) {
+    this._infoCache ||= new Map();
+    const key = trackKey(t);
+    if (!this._infoCache.has(key)) {
+      try {
+        const b = buildTrack(t, { infoOnly: true });
+        this._infoCache.set(key, { potCount: b.pots.length, shortcutCount: b.shortcutCount });
+      } catch {
+        this._infoCache.set(key, {});
+      }
+    }
+    return this._infoCache.get(key);
   }
 
   resolveTrack(ref) {
@@ -178,6 +200,7 @@ export class App {
     }
     this.hud.show(false);
     this.impacts.clear();
+    this.showroom = null;
     // Attract mode: the autopilot laps the built-in tracks behind the menus.
     const track = STARTER_TRACKS[this.attractIndex % STARTER_TRACKS.length];
     this.modeName = 'menu';
@@ -212,38 +235,93 @@ export class App {
     this.impacts.clear();
     const key = trackKey(track);
     const best = getBest(key);
-    const ghost = getSettings().ghost && !options.attract ? loadGhost(key) : null;
+    const mutators = options.mutators || [];
+    // Mutator runs are just for fun: no ghost, no records.
+    const ghost = getSettings().ghost && !options.attract && !mutators.length ? loadGhost(key) : null;
+    const progress = trackProgress(key);
     this.modeName = 'race';
     this.currentTrack = track;
+    this.raceOptions = { ...options };
     this.setMode(null);
     const session = new RaceSession(this, track, {
       ...options,
-      bestTime: best?.time ?? null,
-      bestSplits: ghost?.splits ?? best?.splits ?? null,
+      mutators,
+      bestTime: mutators.length ? null : best?.time ?? null,
+      bestSplits: mutators.length ? null : ghost?.splits ?? best?.splits ?? null,
       ghost,
+      foundPots: progress.pots,
       onFinish: (e, s) => this._onFinish(e, s, track, key),
+      onPot: (id) => !options.autopilot && collectPot(key, id),
+      onShortcut: (id) => !options.autopilot && discoverShortcut(key, id),
     });
     this.setMode(session);
+    this.audio.setVehicle(session.vehicle);
+    this.hud.setTarget(this._nextMedal(track, progress.medal, best?.time));
     this.audio.setMusicMuffled(false);
     this.audio.playMusic(songForTheme(track.theme));
     return session;
   }
 
+  /** The next medal worth chasing on `track` (for the HUD). */
+  _nextMedal(track, medal, bestTime) {
+    const times = medalTimes(track.par);
+    if (!times) return null;
+    const next = Math.min(MEDALS.length - 1, medal + 1);
+    if (medal >= MEDALS.length - 1) return { name: 'INK', time: times[MEDALS.length - 1], color: MEDALS.at(-1).color };
+    return { name: MEDALS[next].name.toUpperCase(), time: times[next], color: MEDALS[next].color };
+  }
+
   _onFinish(e, session, track, key) {
+    const extras = {
+      pots: session.race.potsTaken.size,
+      potsTotal: session.build.pots.length,
+      shortcuts: trackProgress(key).shortcuts.size,
+      shortcutsTotal: session.build.shortcutCount,
+      rival: session.rival ? { level: session.rival.level, time: session.rival.finished, beaten: session.rival.finished == null || e.time <= session.rival.finished } : null,
+      mutators: session.mutators,
+    };
     if (session.options.autopilot && !this.params.has('record')) {
       // Autopilot demo runs don't pollute the leaderboard (unless ?record).
-      setTimeout(() => this._showResults(track, { time: e.time, isBest: false, previousBest: null, rank: null, records: [] }), 1200);
+      setTimeout(() => this._showResults(track, { time: e.time, isBest: false, previousBest: null, rank: null, records: [], ...extras }), 1200);
       return;
     }
-    const result = { ...submitTime(key, e.time, e.splits), time: e.time };
-    if (result.isBest && result.previousBest != null) this.audio.play('record');
-    if (result.isBest && session.recorder) {
-      saveGhost(key, session.recorder.toGhost({ time: e.time, splits: e.splits, trackKey: key }));
+    let result;
+    if (session.mutators.length) {
+      result = { time: e.time, isBest: false, previousBest: null, rank: null, records: [], ...extras };
+    } else {
+      result = { ...submitTime(key, e.time, e.splits), time: e.time, ...extras };
+      if (result.isBest && result.previousBest != null) this.audio.play('record');
+      if (result.isBest && session.recorder) {
+        saveGhost(key, session.recorder.toGhost({ time: e.time, splits: e.splits, trackKey: key }));
+      }
+      const medal = medalFor(e.time, track.par);
+      const award = awardMedal(key, medal);
+      result.medal = medal;
+      result.newMedal = award.newMedal;
+      result.medalTimes = medalTimes(track.par);
+      if (award.newMedal >= 0) setTimeout(() => this.audio.play('medal'), 900);
     }
+    const daily = this.raceOptions?.daily;
+    if (daily && dailyMet(daily.goal, { pots: extras.pots, rivalBeaten: extras.rival?.beaten, respawns: session.race.respawns })) {
+      result.dailyDone = completeDaily(daily.key);
+    }
+    result.ink = inkWallet();
     this.lastResult = result;
     setTimeout(() => {
       if (this.mode === session) this._showResults(track, result);
     }, 1300);
+  }
+
+  /** Today's challenge (built-in tracks only). */
+  daily() {
+    const d = getDaily(this.listTracks().filter((t) => t.builtIn));
+    return { ...d, done: dailyDone(d.key) };
+  }
+
+  startDaily() {
+    const d = this.daily();
+    const goal = d.goal;
+    this.startRace(d.trackRef, { mutators: d.mutators, daily: d, rival: goal.type === 'rival' ? goal.level : null });
   }
 
   _showResults(track, result) {
@@ -262,8 +340,7 @@ export class App {
   restartRace() {
     if (this.modeName !== 'race' || !this.mode) return;
     // Re-create the session so a fresh best time/ghost is picked up.
-    const { autopilot, aggression } = this.mode.options;
-    if (this.mode.race.state === 'finished') this.startRace(this.currentTrack, { autopilot, aggression });
+    if (this.mode.race.state === 'finished') this.startRace(this.currentTrack, this.raceOptions || {});
     else {
       this.menus.hide();
       this.paused = false;
@@ -287,6 +364,22 @@ export class App {
     this.paused = false;
     this.audio.setMusicMuffled(false);
     this.loop.last = performance.now();
+  }
+
+  // ── garage ──────────────────────────────────────────────────────────
+  openGarage(kind = 'car') {
+    this.paused = false;
+    this.hud.show(false);
+    this.impacts.clear();
+    if (this.modeName !== 'garage') {
+      this.setMode(null);
+      this.modeName = 'garage';
+      this.showroom = new Showroom(this);
+      this.setMode(this.showroom);
+      this.audio.playMusic('menu');
+    }
+    this.showroom.setLook(getLook(kind));
+    this.menus.open('garage', { kind });
   }
 
   // ── editor ──────────────────────────────────────────────────────────
@@ -343,7 +436,7 @@ export class App {
       if (this.paused || this.menus.visible) return;
       if (action === 'restart') return this.restartRace();
     }
-    if (this.modeName === 'menu' || this.modeName === 'editor') return; // editor has its own keys
+    if (this.modeName === 'menu' || this.modeName === 'editor' || this.modeName === 'garage') return; // editor has its own keys
     if (this.mode && this.mode.onAction) this.mode.onAction(action);
   }
 }

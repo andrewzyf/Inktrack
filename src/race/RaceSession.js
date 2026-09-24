@@ -1,11 +1,15 @@
 import { Vector3, Quaternion } from 'three';
 import { buildTrack } from '../tracks/TrackBuilder.js';
 import { decoratorFor } from '../tracks/decor.js';
-import { getTheme } from '../tracks/themes.js';
+import { getTheme, nightTheme } from '../tracks/themes.js';
 import { createTrackMeshes } from '../rendering/TrackView.js';
 import { CarView } from '../rendering/CarView.js';
 import { Race } from './Race.js';
 import { Autopilot } from './Autopilot.js';
+import { FlightAutopilot } from './FlightAutopilot.js';
+import { InkPots } from '../rendering/Collectibles.js';
+import { MUTATORS } from '../vehicles/profiles.js';
+import { getLook, resolveLook } from '../vehicles/garage.js';
 import { hashString } from '../core/random.js';
 import { createCarModel, setGhostOpacity, updateWheels } from '../rendering/CarModel.js';
 import { Recorder } from '../replay/Recorder.js';
@@ -27,18 +31,28 @@ export class RaceSession {
     const theme = (this.theme = getTheme(trackData.theme));
     const stage = app.stage;
     const seed = hashString(trackData.id || trackData.name || 'custom');
+    this.mutators = options.mutators || [];
     this.build = buildTrack(trackData, { palette: theme.palette, decorate: decoratorFor(theme.id, String(seed)) });
-    stage.setTheme(theme, seed % 997);
+    stage.setTheme(this.mutators.includes('night') ? nightTheme(theme) : theme, seed % 997);
     stage.clearTrack();
     this.meshes = createTrackMeshes(this.build, stage, theme);
     stage.trackGroup.add(this.meshes);
 
-    this.race = new Race(this.build);
+    this.vehicle = this.build.vehicle;
+    this.race = new Race(this.build, { mutators: this.mutators });
     this.car = this.race.car;
-    this.view = new CarView({ scene: stage.trackGroup, world: this.build.world, particles: stage.particles, skids: stage.skids });
+    this.look = resolveLook(options.look || getLook(this.vehicle));
+    const scale = this.mutators.includes('tiny') ? MUTATORS.tiny.scale : 1;
+    this.view = new CarView({ scene: stage.trackGroup, world: this.build.world, particles: stage.particles, skids: stage.skids, look: this.look, scale });
     this.view.setShadowTexture(stage.textures.shadow);
-    this.autopilot = options.autopilot ? new Autopilot(this.build.route, { aggression: options.aggression ?? 1 }) : null;
+    this.autopilot = options.autopilot ? this._makeAutopilot(options.aggression ?? 1) : null;
     if (this.autopilot) this.autopilot.attach(this.car);
+
+    // Ink pots (found-before pots show faded) and the rival bot.
+    this.pots = new InkPots(this.build.pots, options.foundPots || new Set());
+    stage.trackGroup.add(this.pots.group);
+    this.rival = null;
+    if (options.rival && !options.attract) this._createRival(options.rival);
 
     this.renderPos = new Vector3();
     this.renderQuat = new Quaternion();
@@ -54,7 +68,7 @@ export class RaceSession {
     if (options.ghost) {
       try {
         this.ghost = new GhostPlayer(options.ghost);
-        this.ghostModel = createCarModel({ ghost: true });
+        this.ghostModel = createCarModel({ ghost: true, look: { kind: this.look.kind, body: this.look.body } });
         this.ghostModel.visible = false;
         stage.trackGroup.add(this.ghostModel);
         this.ghostPos = new Vector3();
@@ -75,6 +89,33 @@ export class RaceSession {
     stage.chase.snap(this.car.position, this.car.quaternion);
   }
 
+  _makeAutopilot(aggression) {
+    return this.build.air ? new FlightAutopilot(this.build.route, { aggression }) : new Autopilot(this.build.route, { aggression });
+  }
+
+  /** A second racer driven by the autopilot, drawn as a pink ghost. No collisions. */
+  _createRival(level) {
+    const aggression = { easy: 0.8, medium: 0.92, hard: 1.0 }[level] ?? 0.92;
+    this.rival = {
+      level,
+      race: new Race(this.build, { mutators: this.mutators }),
+      model: createCarModel({ ghost: true, look: { kind: this.look.kind, body: this.look.body }, opacity: 0.6 }),
+      pos: new Vector3(),
+      quat: new Quaternion(),
+      spin: 0,
+      controls: { throttle: 0, brake: 0, steer: 0, drift: false },
+      finished: null,
+    };
+    // Rival-tinted ghost.
+    this.rival.model.traverse((o) => {
+      if (o.material?.uniforms?.uColor && !o.material.isOutline) o.material.uniforms.uColor.value.set(0xff7ab8);
+      if (o.material?.isOutline && o.material.uniforms?.uColor) o.material.uniforms.uColor.value.set(0x7a1248);
+    });
+    this.rival.ap = this._makeAutopilot(aggression);
+    this.rival.ap.attach(this.rival.race.car);
+    this.app.stage.trackGroup.add(this.rival.model);
+  }
+
   get impacts() {
     return this.options.attract ? null : this.app.impacts;
   }
@@ -86,6 +127,12 @@ export class RaceSession {
   restart() {
     this.recorder?.reset();
     this.race.restart();
+    this.pots.reset();
+    if (this.rival) {
+      this.rival.race.restart();
+      this.rival.ap.relocate();
+      this.rival.finished = null;
+    }
     this.view.reset();
     this.app.stage.particles.clear();
     this.fallCam = null;
@@ -121,6 +168,17 @@ export class RaceSession {
       if (this.race.state === 'countdown') this._recordedFinish = false;
     }
     this.view.setBraking(controls.brake > 0 && this.car.forwardSpeed > 5);
+    if (this.rival) {
+      const rv = this.rival;
+      const rr = rv.race;
+      // Stepped in lockstep with the player; keeps going after they finish.
+      rr.step(dt, rv.ap.sample(rv.controls));
+      rr.car.events.length = 0;
+      for (const e of rr.drainEvents()) {
+        if (e.type === 'respawn') rv.ap.relocate();
+        if (e.type === 'finish') rv.finished = e.time;
+      }
+    }
     this.car.drainEvents(this.carEvents);
     this.race.drainEvents(this.raceEvents);
   }
@@ -153,6 +211,7 @@ export class RaceSession {
           break;
         case 'airtime':
           if (e.value > 1.2) fx?.show('AIR!', 'drift', { y: 0.3, size: 8, sub: `${e.value.toFixed(1)}s` });
+          if (e.value > 1.2) this.options.onStunt?.('air', e.value);
           break;
       }
     }
@@ -191,11 +250,28 @@ export class RaceSession {
           fx?.show(pickWord(['SPLAT!', 'WHOOPS!', 'YIKES!']), 'fall', { size: 13 });
           sfx?.play('fall');
           this.fallCam = this.app.stage.renderer.camera.position.clone();
-        } else if (e.reason === 'flip') {
-          fx?.show('KRASH!', 'crash', { size: 13 });
+        } else if (e.reason === 'flip' || e.reason === 'crash') {
+          fx?.show(e.reason === 'crash' ? pickWord(['KA-BLAM!', 'KRASH!', 'POW!']) : 'KRASH!', 'crash', { size: 13 });
           sfx?.play('wall', 20);
+          if (e.reason === 'crash') this.fallCam = this.app.stage.renderer.camera.position.clone();
+        } else if (e.reason === 'lost') {
+          fx?.show('WRONG WAY!', 'crash', { size: 11, sub: 'back to the rings' });
+          sfx?.play('missed');
         }
         break;
+      case 'pot': {
+        this.pots.take(this.build.pots.findIndex((p) => p.id === e.id));
+        const fresh = this.options.onPot?.(e.id);
+        fx?.show(fresh ? '+INK!' : 'INK', 'boost', { y: 0.42, size: fresh ? 7 : 5, duration: 600, sub: `${e.count}/${e.total}` });
+        sfx?.play('pot', fresh ? 1 : 0);
+        break;
+      }
+      case 'shortcut': {
+        const fresh = this.options.onShortcut?.(e.id);
+        fx?.show('SHORTCUT!', 'go', { y: 0.3, size: 11, duration: 1100, sub: fresh ? 'discovered! +10 ink' : '' });
+        sfx?.play('shortcut');
+        break;
+      }
       case 'respawn':
         sfx?.play('respawn');
         this.fallCam = null;
@@ -220,6 +296,8 @@ export class RaceSession {
     this.view.update(dt, car, this.renderPos, this.renderQuat);
 
     this._updateGhost(dt, alpha);
+    this._updateRival(dt, alpha);
+    this.pots.update(dt);
     const stage = this.app.stage;
     if (this.fallCam) {
       // Falling off: freeze the camera and watch the car tumble away.
@@ -254,6 +332,9 @@ export class RaceSession {
         meter: car.drifting ? car.driftMeter : car.boosting ? 1 : 0,
         drifting: car.drifting,
         boosting: car.boosting,
+        pots: this.race.potsTaken.size,
+        potsTotal: this.build.pots.length,
+        rival: this.rival ? this._rivalGap() : null,
       });
     }
   }
@@ -281,6 +362,44 @@ export class RaceSession {
     // Fade when overlapping the player so it never hides the car.
     const d = this.ghostPos.distanceTo(this.renderPos);
     setGhostOpacity(m, d < 3 ? 0.12 : d < 8 ? 0.12 + ((d - 3) / 5) * 0.33 : 0.45);
+  }
+
+  _updateRival(dt, alpha) {
+    const rv = this.rival;
+    if (!rv) return;
+    const r = rv.race;
+    rv.pos.lerpVectors(r.prevPos, r.car.position, alpha);
+    rv.quat.slerpQuaternions(r.prevQuat, r.car.quaternion, alpha);
+    rv.model.position.copy(rv.pos);
+    rv.model.quaternion.copy(rv.quat);
+    if (rv.model.userData.wheels.length) {
+      rv.spin += r.car.forwardSpeed * dt / 0.37;
+      for (const w of rv.model.userData.wheels) w.spin = rv.spin;
+      updateWheels(rv.model);
+    }
+    if (rv.model.userData.propeller) rv.model.userData.propeller.rotation.z += dt * 50;
+    const d = rv.pos.distanceTo(this.renderPos);
+    setGhostOpacity(rv.model, d < 3 ? 0.15 : d < 8 ? 0.15 + ((d - 3) / 5) * 0.4 : 0.55);
+  }
+
+  /** Seconds ahead (−) / behind (+) the rival, by checkpoint splits or route distance. */
+  _rivalGap() {
+    const rv = this.rival;
+    const me = this.race;
+    if (rv.finished != null && me.state === 'finished') return { done: true, delta: me.finishTime - rv.finished, level: rv.level };
+    const ahead = (me.nextCheckpoint - rv.race.nextCheckpoint);
+    return { done: false, ahead: ahead > 0 ? 1 : ahead < 0 ? -1 : Math.sign(this._progress(this.car) - this._progress(rv.race.car)), level: rv.level };
+  }
+
+  _progress(car) {
+    // Cheap progress: distance along the route of the nearest point near the car.
+    const route = this.build.route;
+    let best = Infinity, dist = 0;
+    for (let i = 0; i < route.length; i += 4) {
+      const d = route[i].pos.distanceToSquared(car.position);
+      if (d < best) { best = d; dist = route[i].dist; }
+    }
+    return dist;
   }
 
   dispose() {

@@ -87,7 +87,7 @@ describe('Phase 4 — checkpoints, timer, respawn', () => {
     for (const t of ['straight', 'bank', 'ramp', 'checkpoint', 'finish']) expect(types.has(t), t).toBe(true);
     expect(types.has('loop') || types.has('loopRight')).toBe(true);
     expect(build.order.at(-1).rp.type).toBe('finish');
-    expect(build.order.length).toBe(rooftop.pieces.length); // every piece is on the driving line
+    expect(build.order.length).toBe(rooftop.pieces.filter((p) => p.sc == null).length); // every piece except shortcut lanes is on the driving line
   });
 
   it('a full timed lap is completable (autopilot, no respawns)', () => {
@@ -161,7 +161,7 @@ describe('Phase 4 — checkpoints, timer, respawn', () => {
   it('traversal reaches every placed piece of every starter track', () => {
     for (const t of STARTER_TRACKS) {
       const order = traverse(t.pieces.map((p, i) => resolvePlacement(p, i)));
-      expect(order.length, t.id).toBe(t.pieces.length);
+      expect(order.length, t.id).toBe(t.pieces.filter((p) => p.sc == null).length);
     }
   });
 });

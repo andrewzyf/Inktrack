@@ -13,7 +13,11 @@ export class HUD {
       <div class="hud-top">
         <div class="panel hud-cp"><span class="label">CP</span><span class="value" data-cp>0/0</span></div>
         <div class="panel hud-timer"><span class="value" data-time>00:00.000</span><span class="delta" data-delta></span></div>
-        <div class="panel hud-best"><span class="label">BEST</span><span class="value" data-best>--:--.---</span></div>
+        <div class="panel hud-best"><span class="label">BEST</span><span class="value" data-best>--:--.---</span><span class="target" data-target></span></div>
+      </div>
+      <div class="hud-side">
+        <div class="panel hud-pots" data-pots-panel><span class="pot-icon"></span><span class="value" data-pots>0/0</span></div>
+        <div class="panel hud-rival hidden" data-rival></div>
       </div>
       <div class="hud-bottom">
         <div class="panel hud-speed">
@@ -38,7 +42,21 @@ export class HUD {
     this.deltaEl = this.q('[data-delta]');
     this.meterEl = this.q('[data-meter]');
     this.fillEl = this.q('[data-fill]');
+    this.potsEl = this.q('[data-pots]');
+    this.potsPanel = this.q('[data-pots-panel]');
+    this.rivalEl = this.q('[data-rival]');
+    this.targetEl = this.q('[data-target]');
     this.cache = {};
+  }
+
+  /** Next medal to chase, e.g. { name: 'GOLD', time, color }. */
+  setTarget(t) {
+    if (!t) {
+      this.targetEl.textContent = '';
+      return;
+    }
+    this.targetEl.textContent = `${t.name} ${formatTime(t.time)}`;
+    this.targetEl.style.color = t.color;
   }
 
   show(on = true) {
@@ -73,7 +91,19 @@ export class HUD {
     this._deltaTimer = setTimeout(() => (this.deltaEl.className = 'delta'), 2200);
   }
 
-  update({ time, checkpoint, checkpoints, speed, meter, drifting, boosting }) {
+  update({ time, checkpoint, checkpoints, speed, meter, drifting, boosting, pots = 0, potsTotal = 0, rival = null }) {
+    this._set('pots', this.potsEl, `${pots}/${potsTotal}`);
+    if (this.cache.potsShown !== potsTotal > 0) {
+      this.cache.potsShown = potsTotal > 0;
+      this.potsPanel.classList.toggle('hidden', !potsTotal);
+    }
+    const rv = !rival ? '' : rival.done ? (rival.delta <= 0 ? 'BEAT INKBOT!' : 'INKBOT WON') : rival.ahead > 0 ? 'INKBOT ▼ BEHIND' : rival.ahead < 0 ? 'INKBOT ▲ AHEAD' : 'INKBOT NECK & NECK';
+    if (this.cache.rival !== rv) {
+      this.cache.rival = rv;
+      this.rivalEl.textContent = rv;
+      this.rivalEl.classList.toggle('hidden', !rv);
+      this.rivalEl.classList.toggle('ahead', !!rival && (rival.done ? rival.delta <= 0 : rival.ahead > 0));
+    }
     this._set('time', this.timeEl, formatTime(time));
     this._set('cp', this.cpEl, `${checkpoint}/${checkpoints}`);
     this._set('speed', this.speedEl, String(Math.round(Math.abs(speed) * 3.6)));

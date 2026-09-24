@@ -22,11 +22,12 @@ export function materialsFor(stage, theme) {
     glow: new MeshBasicMaterial({ vertexColors: true }),
     signs: new MeshBasicMaterial({ map: signTexture(theme.id), side: DoubleSide }),
   };
+  if (theme.id === 'ocean') mats.sea = createToonMaterial({ vertexColors: true, map: stage.seaTexture(), shine: 0.4, name: 'sea' });
   materialCache.set(key, mats);
   return mats;
 }
 
-const NO_OUTLINE = new Set(['glow', 'signs']);
+const NO_OUTLINE = new Set(['glow', 'signs', 'sea']);
 
 export function createTrackMeshes(build, stage, theme) {
   const group = new Group();

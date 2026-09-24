@@ -47,6 +47,7 @@ export function createToonMaterial(opts = {}) {
   const defines = {};
   if (opts.map) {
     uniforms.map = { value: opts.map };
+    uniforms.uMapOffset = { value: opts.map.offset }; // live: animated water scrolls this
     defines.USE_MAP = '';
   }
   if (opts.halftone !== false && renderSettings.halftone) defines.USE_HALFTONE = '';

@@ -283,6 +283,21 @@ export class Sfx {
         [523, 659, 784, 1046].forEach((f, i) => this._tone('triangle', f, f, i === 3 ? 0.6 : 0.16, 0.14, i * 0.12));
         this._noise(0.8, 0.06, 'highpass', 5000, 9000, 0.5, 0.36);
         break;
+      case 'pot':
+        // Bottle "plink": two quick glassy notes (brighter for a new pot).
+        this._tone('sine', value ? 1568 : 1175, value ? 1568 : 1175, 0.12, 0.09);
+        this._tone('sine', value ? 2093 : 1568, value ? 2093 : 1568, 0.18, 0.07, 0.06);
+        break;
+      case 'shortcut':
+        [659, 880, 1109, 1319].forEach((f, i) => this._tone('triangle', f, f, 0.14, 0.1, i * 0.05));
+        this._noise(0.4, 0.08, 'bandpass', 1200, 5000, 1.2);
+        break;
+      case 'medal':
+        [784, 988, 1175, 1568].forEach((f, i) => this._tone('triangle', f, f, i === 3 ? 0.7 : 0.18, 0.12, i * 0.1));
+        break;
+      case 'unlock':
+        [523, 784, 1046].forEach((f, i) => this._tone('square', f, f, 0.12, 0.06, i * 0.07));
+        break;
       case 'record':
         [784, 988, 1175, 1568, 1976].forEach((f, i) => this._tone('square', f, f, 0.12, 0.07, 0.6 + i * 0.07));
         break;

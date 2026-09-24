@@ -1,4 +1,4 @@
-import { Vector3, Quaternion, Matrix4, BoxGeometry } from 'three';
+import { Vector3, Quaternion, Matrix4, BoxGeometry, TorusGeometry } from 'three';
 import { CollisionWorld, SURFACE } from '../physics/CollisionWorld.js';
 import { TILE, LEVEL, DIRS, opposite, rotateCell, ROAD_WIDTH, WALL_HEIGHT, WALL_COLLISION_HEIGHT, WALL_THICKNESS, SLAB } from './constants.js';
 import { getPiece, pieceSegments } from './pieces.js';
@@ -6,6 +6,12 @@ import { transformPath, reversePath, makeFrame } from './paths.js';
 import { addRoadCollision, sweepRoadGeometry } from './sweep.js';
 import { GeoSet } from './GeoSet.js';
 import { PHYSICS } from '../config/physics.js';
+import { vehicleForTheme } from '../vehicles/profiles.js';
+
+/** Sky courses fly this far above the (invisible) layout. */
+export const AIR_HEIGHT = 7;
+/** Sky layouts are scaled up so turns suit a plane's turning circle. */
+export const AIR_SCALE = 2.5;
 
 /**
  * Turns track data (a list of piece placements) into everything a race
@@ -72,7 +78,8 @@ export function overlaps(occ, rp, ignore = -1) {
 function worldSegments(rp, reversed) {
   const segs = pieceSegments(rp.type).map((s) => ({ ...s, path: transformPath(s.path, rp.quat, rp.offset) }));
   if (!reversed) return segs;
-  return segs.reverse().map((s) => ({ ...s, path: reversePath(s.path), capStart: s.capEnd, capEnd: s.capStart }));
+  // Reversing a path swaps its left and right, so asymmetric walls swap too.
+  return segs.reverse().map((s) => ({ ...s, path: reversePath(s.path), walls: [s.walls[1], s.walls[0]], capStart: s.capEnd, capEnd: s.capStart }));
 }
 
 /**
@@ -133,6 +140,30 @@ function jumpSearch(byEdge, visited, cx, cz, dir, level) {
   return null;
 }
 
+const _lift = new Vector3(0, WALL_HEIGHT, 0);
+const _noRot = new Quaternion();
+/** Render one piece segment (a divider island renders as a raised block). */
+function sweepSegment(builder, s, palette) {
+  if (s.median) {
+    sweepRoadGeometry(builder, transformPath(s.path, _noRot, _lift), {
+      walls: [false, false], width: s.width, slab: SLAB + WALL_HEIGHT, spacing: 2, capStart: true, capEnd: true,
+      palette: { ...palette, road: palette.wallTop ?? 0xf04a3c, edge: palette.wallInner ?? 0xd9d4e8 },
+    });
+    return;
+  }
+  sweepRoadGeometry(builder, s.path, {
+    walls: s.walls,
+    width: s.width || ROAD_WIDTH,
+    wallHeight: WALL_HEIGHT,
+    wallThickness: WALL_THICKNESS,
+    slab: SLAB,
+    spacing: s.spacing || 2,
+    capStart: s.capStart,
+    capEnd: s.capEnd,
+    palette,
+  });
+}
+
 /** Sample the ordered pieces into a dense racing line. */
 function buildRoute(order) {
   const pts = [];
@@ -149,7 +180,7 @@ function buildRoute(order) {
   };
   let ice = false;
   for (const { rp, reversed } of order) {
-    const segs = worldSegments(rp, reversed);
+    const segs = worldSegments(rp, reversed).filter((s) => !s.lane);
     ice = rp.data.s === 'ice';
     for (const s of segs) {
       const n = Math.max(2, Math.ceil(s.path.length / 1.0));
@@ -213,13 +244,23 @@ export function buildTrack(data, options = {}) {
   const occupancy = buildOccupancy(resolved);
   const order = traverse(resolved);
   const route = buildRoute(order);
+  const vehicle = data.vehicle || vehicleForTheme(data.theme);
+  const air = vehicle === 'plane';
+  if (air) {
+    let prev = null;
+    for (const p of route) {
+      p.pos.multiplyScalar(AIR_SCALE).addScaledVector(p.up, AIR_HEIGHT);
+      p.dist = prev ? prev.dist + prev.pos.distanceTo(p.pos) : 0;
+      prev = p;
+    }
+  }
   const world = new CollisionWorld();
   const geo = new GeoSet(160);
   const errors = [];
 
   const reversedOf = new Map(order.map((o) => [o.rp.index, o.reversed]));
 
-  for (const rp of resolved) {
+  for (const rp of air || options.infoOnly ? [] : resolved) {
     const segs = worldSegments(rp, reversedOf.get(rp.index) || false);
     for (const s of segs) {
       const surface = s.surface === 'boost' ? 'boost' : rp.data.s === 'ice' ? 'ice' : 'road';
@@ -229,25 +270,22 @@ export function buildTrack(data, options = {}) {
         surface: SURFACE_IDS[surface],
         guided: s.guided,
         samples: Math.max(2, Math.ceil(s.path.length / Math.min(spacing, 2))),
-        width: ROAD_WIDTH,
+        width: s.width || ROAD_WIDTH,
         wallHeight: WALL_COLLISION_HEIGHT,
       });
       const mid = makeFrame();
       s.path.frame(0.5, mid);
-      sweepRoadGeometry(geo.get(surface, mid.pos.x, mid.pos.z), s.path, {
-        walls: s.walls,
-        width: ROAD_WIDTH,
-        wallHeight: WALL_HEIGHT,
-        wallThickness: WALL_THICKNESS,
-        slab: SLAB,
-        spacing,
-        capStart: s.capStart,
-        capEnd: s.capEnd,
-        palette,
-      });
+      sweepSegment(geo.get(s.median ? 'decor' : surface, mid.pos.x, mid.pos.z), s, palette);
     }
   }
   world.build();
+  if (air) {
+    // No road: bounds come from the flight path.
+    for (const p of route) {
+      world.bounds.min.min(p.pos);
+      world.bounds.max.max(p.pos);
+    }
+  }
 
   // Gates in driving order.
   const checkpoints = [];
@@ -290,6 +328,31 @@ export function buildTrack(data, options = {}) {
   };
   for (const cp of checkpoints) cp.routeDist = gateDist(cp);
   if (finish) finish.routeDist = gateDist(finish);
+  const boostRings = [];
+  if (air) {
+    // Gates become rings hanging in the sky.
+    for (const g of [start, ...checkpoints, finish]) {
+      if (!g) continue;
+      g.center.multiplyScalar(AIR_SCALE).addScaledVector(g.up, AIR_HEIGHT);
+      g.spawn.pos.copy(g.center);
+      g.ring = true;
+      g.radius = g.kind === 'checkpoint' ? 10 : 11;
+      if (g.kind !== 'start') g.routeDist = gateDist(g);
+    }
+    for (const { rp } of order) {
+      if (rp.type !== 'boost') continue;
+      boostRings.push({ pos: rp.offset.clone().multiplyScalar(AIR_SCALE).addScaledVector(UP, AIR_HEIGHT), radius: 6, forward: new Vector3(0, 0, 1).applyQuaternion(rp.quat) });
+    }
+  }
+
+  // Shortcut lanes (pieces tagged `sc`) by grid cell, for discovery.
+  const shortcutCells = new Map();
+  const shortcutIds = new Set();
+  for (const rp of resolved) {
+    if (rp.data.sc == null) continue;
+    shortcutIds.add(rp.data.sc);
+    for (const [x, z] of rp.cells) shortcutCells.set(`${x},${z}`, { id: rp.data.sc, minY: rp.offset.y - 3, maxY: rp.offset.y + rp.def.height * LEVEL + 3 });
+  }
 
   let minY = Infinity;
   for (const rp of resolved) minY = Math.min(minY, rp.offset.y);
@@ -308,13 +371,100 @@ export function buildTrack(data, options = {}) {
     start,
     errors,
     valid: errors.length === 0,
-    killY: minY - 18,
+    killY: air ? minY * AIR_SCALE - 45 : minY - 18,
+    vehicle,
+    air,
+    boostRings,
+    obstacles: [],
+    shortcutCells,
+    shortcutCount: shortcutIds.size,
+    pots: placePots(route, resolved),
     bounds: world.bounds,
   };
 
-  for (const g of [start, ...checkpoints, finish]) if (g) addGateGeometry(geo, g, palette);
+  if (options.infoOnly) return build;
+  if (air) addRingGeometry(build);
+  else for (const g of [start, ...checkpoints, finish]) if (g) addGateGeometry(geo, g, palette);
   if (options.decorate) options.decorate(build);
   return build;
+}
+
+// ── collectibles ────────────────────────────────────────────────────────
+/**
+ * Ink pots: a trail of collectibles along the racing line (some off to the
+ * side, some hanging over jump gaps) plus one on every shortcut lane.
+ * Deterministic, so a pot's index is a stable id for saving progress.
+ */
+function placePots(route, resolved) {
+  const pots = [];
+  if (route.length < 2) return pots;
+  const total = route.at(-1).dist;
+  const lateral = [0, -2.6, 2.6, -1.3, 1.3];
+  let k = 0;
+  let i = 0;
+  for (let d = 110; d < total - 60; d += 125) {
+    while (i < route.length - 1 && route[i].dist < d) i++;
+    // Prefer the middle of a nearby jump gap: a pot you have to fly through.
+    let p = route[i];
+    for (let j = i; j < Math.min(route.length, i + 25); j++) {
+      if (route[j].gap) {
+        let e = j;
+        while (e < route.length - 1 && route[e + 1].gap) e++;
+        p = route[Math.floor((j + e) / 2)];
+        i = e;
+        break;
+      }
+    }
+    const off = p.gap ? 0 : lateral[k++ % lateral.length];
+    const pos = p.pos.clone().addScaledVector(p.right, off).addScaledVector(p.up, p.gap ? 1.4 : 1.0);
+    pots.push({ id: pots.length, pos, up: p.up.clone() });
+  }
+  const done = new Set();
+  for (const rp of resolved) {
+    if (rp.data.sc == null || done.has(rp.data.sc)) continue;
+    // Middle piece of each shortcut lane.
+    let lane = resolved.filter((q) => q.data.sc === rp.data.sc && !q.def.launch);
+    if (!lane.length) lane = resolved.filter((q) => q.data.sc === rp.data.sc);
+    const mid = lane[Math.floor(lane.length / 2)];
+    done.add(rp.data.sc);
+    const seg = pieceSegments(mid.type)[0];
+    const f = transformPath(seg.path, mid.quat, mid.offset).frame(0.5, makeFrame());
+    pots.push({ id: pots.length, pos: f.pos.clone().addScaledVector(f.up, 1.0), up: f.up.clone(), shortcut: rp.data.sc });
+  }
+  return pots;
+}
+
+// ── sky rings ───────────────────────────────────────────────────────────
+const RING_COLORS = { start: 0xffffff, checkpoint: 0xffd23f, finish: 0xff4d8d };
+function addRingGeometry(build) {
+  const { geo, route } = build;
+  const m = new Matrix4();
+  const q = new Quaternion();
+  const s = new Vector3();
+  const Z = new Vector3(0, 0, 1);
+  const torus = (radius, tube, segs) => new TorusGeometry(radius, tube, 6, segs);
+  const put = (key, g, pos, forward, color) => {
+    q.setFromUnitVectors(Z, forward);
+    m.compose(pos, q, s.set(1, 1, 1));
+    geo.get(key, pos.x, pos.z).append(g, m, color);
+  };
+  const gateTorus = torus(1, 0.09, 28);
+  for (const g of [build.start, ...build.checkpoints, build.finish]) {
+    if (!g) continue;
+    const t = gateTorus.clone().scale(g.radius, g.radius, g.radius * 3);
+    put('decor', t, g.center, g.forward, RING_COLORS[g.kind]);
+  }
+  const boost = torus(6, 0.45, 20);
+  for (const r of build.boostRings) put('glow', boost, r.pos, r.forward, 0xff9a2a);
+  // Small guide hoops trace the course between gates.
+  const hoop = torus(3.2, 0.22, 14);
+  const every = 38;
+  let next = 30;
+  for (const p of route) {
+    if (p.dist < next) continue;
+    next = p.dist + every;
+    put('decor', hoop, p.pos, p.tangent, 0x7fe0ff);
+  }
 }
 
 // ── gates ───────────────────────────────────────────────────────────────
@@ -365,11 +515,8 @@ export function buildPieceGeometry(type, { surface = null, palette = {} } = {}) 
   const def = getPiece(type);
   const geo = new GeoSet(1e6);
   for (const s of pieceSegments(type)) {
-    const mat = s.surface === 'boost' ? 'boost' : surface === 'ice' ? 'ice' : 'road';
-    sweepRoadGeometry(geo.get(mat), s.path, {
-      walls: s.walls, width: ROAD_WIDTH, wallHeight: WALL_HEIGHT, wallThickness: WALL_THICKNESS, slab: SLAB,
-      spacing: s.spacing || 2, capStart: s.capStart, capEnd: s.capEnd, palette,
-    });
+    const mat = s.median ? 'decor' : s.surface === 'boost' ? 'boost' : surface === 'ice' ? 'ice' : 'road';
+    sweepSegment(geo.get(mat), s, palette);
   }
   if (def.gate) {
     const f = new Vector3(0, 0, 1);

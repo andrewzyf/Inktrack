@@ -416,10 +416,264 @@ function groundPlane(build, y, color) {
   place(build.geo.get('decor', cx, cz), G.box, cx, y - 0.5, cz, color, { sx, sy: 1, sz });
 }
 
+// ── Red Canyon ──────────────────────────────────────────────────────────
+const SANDSTONE = [0xd9784a, 0xc4633d, 0xe08d5c, 0xb8553a, 0xcf7a52];
+const CACTUS = 0x3f9a4f;
+
+function cactus(b, x, y, z, rand) {
+  const h = randRange(rand, 2.5, 5);
+  place(b, G.cyl, x, y + h / 2, z, CACTUS, { sx: 0.45, sy: h, sz: 0.45 });
+  place(b, G.ico, x, y + h, z, CACTUS, { sx: 0.45, sy: 0.35, sz: 0.45 });
+  for (const s of [-1, 1]) {
+    if (rand() < 0.3) continue;
+    const ay = y + h * randRange(rand, 0.35, 0.6), ah = randRange(rand, 0.8, 1.6);
+    const ry = rand() * Math.PI;
+    const dx = Math.cos(ry) * s * 0.8, dz = -Math.sin(ry) * s * 0.8;
+    place(b, G.cyl, x + dx * 0.6, ay, z + dz * 0.6, CACTUS, { sx: 0.25, sy: 0.25, sz: 1.2, ry, rx: Math.PI / 2 });
+    place(b, G.cyl, x + dx, ay + ah / 2, z + dz, CACTUS, { sx: 0.3, sy: ah, sz: 0.3 });
+  }
+  if (rand() < 0.3) place(b, G.ico, x, y + h + 0.3, z, 0xff5fa2, { sx: 0.25, sy: 0.25, sz: 0.25 });
+}
+
+function rockArch(b, x, y, z, ry, rand) {
+  const c = pick(rand, SANDSTONE);
+  const dx = Math.cos(ry) * 5, dz = -Math.sin(ry) * 5;
+  place(b, G.rock, x + dx, y + 4, z + dz, c, { sx: 2.4, sy: 5, sz: 2.4 });
+  place(b, G.rock, x - dx, y + 4, z - dz, c, { sx: 2.4, sy: 5, sz: 2.4 });
+  place(b, G.box, x, y + 8.5, z, c, { sx: 13, sy: 2.2, sz: 3, ry, rz: randRange(rand, -0.05, 0.05) });
+}
+
+function decorateCanyon(build, rand) {
+  const geo = build.geo;
+  const cells = trackCells(build);
+  const FLOOR = -45;
+  for (const [k, lvl] of cells) {
+    const [x, z] = k.split(',').map(Number);
+    const cx = x * TILE, cz = z * TILE;
+    const top = lvl * LEVEL - SLAB;
+    const h = top - FLOOR;
+    place(geo.get('facade', cx, cz), facadeBox(TILE - 0.1, h, TILE - 0.1), cx, FLOOR + h / 2, cz, pick(rand, SANDSTONE));
+  }
+  const around = surroundings(cells, 7);
+  for (const c of around.values()) {
+    const cx = c.x * TILE, cz = c.z * TILE;
+    const trackTop = c.level * LEVEL;
+    // Canyon walls: low right beside the road, towering cliffs a little further out.
+    let top;
+    if (c.dist === 1) top = trackTop - randRange(rand, 2, 8);
+    else if (c.dist <= 3) {
+      if (rand() < 0.35) continue;
+      top = trackTop + randRange(rand, 6, 26);
+    } else {
+      if (rand() < 0.45) continue;
+      top = trackTop + randRange(rand, -10, 40);
+    }
+    const h = top - FLOOR;
+    const w = TILE + randRange(rand, -2, 3), d = TILE + randRange(rand, -2, 3);
+    place(geo.get('facade', cx, cz), facadeBox(w, h, d), cx, FLOOR + h / 2, cz, pick(rand, SANDSTONE));
+    const b = geo.get('decor', cx, cz);
+    // Strata band + a flat cap.
+    place(b, G.box, cx, top + 0.25, cz, 0xf0a878, { sx: w + 0.3, sy: 0.5, sz: d + 0.3 });
+    if (c.dist >= 5) continue;
+    const k = rand();
+    if (k < 0.3) cactus(b, cx + randRange(rand, -3, 3), top + 0.5, cz + randRange(rand, -3, 3), rand);
+    else if (k < 0.42) place(b, G.rock, cx, top + 1.4, cz, pick(rand, SANDSTONE), { sx: 2.6, sy: 1.8, sz: 2.2, ry: rand() * 6 });
+    else if (k < 0.47 && c.dist >= 2) rockArch(b, cx, top, cz, rand() * Math.PI, rand);
+    else if (k < 0.52) {
+      // Wooden signpost.
+      place(b, G.box, cx, top + 1.5, cz, 0x7a4a2a, { sx: 0.25, sy: 3, sz: 0.25 });
+      place(b, G.box, cx, top + 2.6, cz, 0xe8c79a, { sx: 2.2, sy: 0.6, sz: 0.15, ry: rand() * 3 });
+    }
+  }
+  // Desert floor dotted with cacti.
+  groundPlane(build, FLOOR, 0xe9a66e);
+  const bounds = build.bounds;
+  for (let i = 0; i < 70; i++) {
+    const x = randRange(rand, bounds.min.x - 60, bounds.max.x + 60), z = randRange(rand, bounds.min.z - 60, bounds.max.z + 60);
+    if (cells.has(`${Math.round(x / TILE)},${Math.round(z / TILE)}`)) continue;
+    cactus(geo.get('decor', x, z), x, FLOOR, z, rand);
+  }
+}
+
+// ── Tropic Bay (ocean) ──────────────────────────────────────────────────
+const SEA_LEVEL = -0.35;
+const WOOD = [0x8a5a36, 0x7a4e2e, 0x9b6a42];
+
+function palm(b, x, y, z, rand, s = 1) {
+  const h = randRange(rand, 5, 8) * s;
+  const lean = randRange(rand, -0.25, 0.25);
+  place(b, G.cylLow, x, y + h / 2, z, 0x9a6a3e, { sx: 0.3 * s, sy: h, sz: 0.3 * s, rz: lean });
+  const tx = x - Math.sin(lean) * h / 2, ty = y + h;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + rand();
+    place(b, G.box, tx + Math.cos(a) * 1.6 * s, ty - 0.3 * s, z + Math.sin(a) * 1.6 * s, pick(rand, [0x2f9e57, 0x3fb865, 0x27884a]), { sx: 3.4 * s, sy: 0.12, sz: 0.9 * s, ry: -a, rz: -0.35 });
+  }
+  place(b, G.ico, tx, ty, z, 0x6b4a2a, { sx: 0.5 * s, sy: 0.5 * s, sz: 0.5 * s });
+}
+
+function island(geo, x, z, r, rand) {
+  const b = geo.get('decor', x, z);
+  place(b, G.cyl, x, SEA_LEVEL - 0.2, z, 0xf2dea0, { sx: r, sy: 1.2, sz: r });
+  place(b, G.ico, x, SEA_LEVEL, z, 0x6fbf5a, { sx: r * 0.7, sy: randRange(rand, 1.5, 4), sz: r * 0.7 });
+  const n = 1 + Math.floor(r / 5);
+  for (let i = 0; i < n; i++) palm(b, x + randRange(rand, -r * 0.5, r * 0.5), SEA_LEVEL + 0.5, z + randRange(rand, -r * 0.5, r * 0.5), rand);
+  if (rand() < 0.4) {
+    // Beach hut.
+    const hx = x + r * 0.4, hz = z - r * 0.3;
+    place(b, G.box, hx, SEA_LEVEL + 1.6, hz, 0xe8c79a, { sx: 3, sy: 2.4, sz: 3 });
+    place(b, G.cone6, hx, SEA_LEVEL + 3.6, hz, 0xd9a441, { sx: 2.8, sy: 1.8, sz: 2.8 });
+  }
+}
+
+function lighthouse(geo, x, z) {
+  const b = geo.get('decor', x, z);
+  place(b, G.rock, x, SEA_LEVEL, z, 0x8f8a9a, { sx: 6, sy: 3, sz: 6 });
+  for (let i = 0; i < 5; i++) place(b, G.cyl, x, SEA_LEVEL + 3 + i * 3, z, i % 2 ? 0xffffff : 0xe8343f, { sx: 2.2 - i * 0.2, sy: 3, sz: 2.2 - i * 0.2 });
+  place(geo.get('glow', x, z), G.cyl, x, SEA_LEVEL + 18.5, z, 0xfff3a8, { sx: 1.3, sy: 2, sz: 1.3 });
+  place(b, G.cone6, x, SEA_LEVEL + 20.5, z, 0x2b2640, { sx: 1.8, sy: 2, sz: 1.8 });
+}
+
+function sailboat(b, x, z, ry, rand) {
+  place(b, G.box, x, SEA_LEVEL + 0.4, z, 0xffffff, { sx: 1.8, sy: 0.9, sz: 5, ry });
+  place(b, G.box, x, SEA_LEVEL + 3.5, z, 0x5a3a2a, { sx: 0.15, sy: 6, sz: 0.15, ry });
+  place(b, G.cone6, x, SEA_LEVEL + 4, z, pick(rand, [0xff5a4a, 0xffd23f, 0xffffff]), { sx: 0.2, sy: 5, sz: 2.2, ry });
+}
+
+function decorateOcean(build, rand) {
+  const geo = build.geo;
+  const cells = trackCells(build);
+  // Stilts under raised flumes; low lanes float on the sea.
+  for (const [k, lvl] of cells) {
+    const [x, z] = k.split(',').map(Number);
+    const cx = x * TILE, cz = z * TILE;
+    const top = lvl * LEVEL - SLAB;
+    if (top <= SEA_LEVEL + 0.2) continue;
+    const b = geo.get('decor', cx, cz);
+    for (const [ox, oz] of [[-3.8, -3.8], [3.8, -3.8], [-3.8, 3.8], [3.8, 3.8]]) {
+      const h = top - SEA_LEVEL + 1;
+      place(b, G.cylLow, cx + ox, SEA_LEVEL - 1 + h / 2, cz + oz, pick(rand, WOOD), { sx: 0.35, sy: h, sz: 0.35 });
+    }
+    place(b, G.box, cx, top - 0.2, cz, 0x7a4e2e, { sx: TILE - 0.4, sy: 0.4, sz: 0.6 });
+  }
+  const around = surroundings(cells, 9);
+  let lighthouses = 0;
+  for (const c of around.values()) {
+    const cx = c.x * TILE + randRange(rand, -3, 3), cz = c.z * TILE + randRange(rand, -3, 3);
+    const roll = rand();
+    if (c.dist === 1) {
+      // Buoys bobbing next to the lanes.
+      if (roll < 0.18) {
+        const b = geo.get('decor', cx, cz);
+        place(b, G.ico, cx, SEA_LEVEL + 0.3, cz, rand() < 0.5 ? 0xff5a4a : 0xffd23f, { sx: 0.8, sy: 0.9, sz: 0.8 });
+        place(b, G.box, cx, SEA_LEVEL + 1.4, cz, 0xffffff, { sx: 0.15, sy: 1.6, sz: 0.15 });
+      }
+      continue;
+    }
+    if (c.dist >= 3 && roll < 0.06) island(geo, cx, cz, randRange(rand, 5, 12), rand);
+    else if (c.dist >= 4 && roll < 0.075 && lighthouses < 2) { lighthouse(geo, cx, cz); lighthouses++; }
+    else if (c.dist >= 3 && roll < 0.1) sailboat(geo.get('decor', cx, cz), cx, cz, rand() * 6, rand);
+    else if (c.dist >= 2 && roll < 0.13) place(geo.get('decor', cx, cz), G.rock, cx, SEA_LEVEL, cz, 0x8f8a9a, { sx: 2.5, sy: 1.8, sz: 2.5, ry: rand() * 6 });
+  }
+  // The sea itself: a big animated plane (its own material).
+  const bounds = build.bounds;
+  const mx = (bounds.min.x + bounds.max.x) / 2, mz = (bounds.min.z + bounds.max.z) / 2;
+  const sx = bounds.max.x - bounds.min.x + 900, sz = bounds.max.z - bounds.min.z + 900;
+  const sea = new PlaneGeometry(sx, sz, 1, 1).rotateX(-Math.PI / 2);
+  const uv = sea.getAttribute('uv');
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) * sx) / 24, (uv.getY(i) * sz) / 24);
+  place(geo.get('sea', mx, mz), sea, mx, SEA_LEVEL, mz, 0xffffff);
+}
+
+// ── Cloud Kingdom (sky) ─────────────────────────────────────────────────
+const GRASS = [0x7fd46a, 0x6cc45f, 0x93dd7a];
+const CLIFF = [0xb49ad9, 0x9f86cc, 0xc6b0e6];
+
+function floatingIsland(geo, x, y, z, r, rand, obstacles) {
+  const f = geo.get('facade', x, z);
+  const b = geo.get('decor', x, z);
+  place(f, G.cone6, x, y - r * 0.9, z, pick(rand, CLIFF), { sx: r, sy: r * 1.8, sz: r, rx: Math.PI });
+  place(b, G.cyl, x, y, z, pick(rand, GRASS), { sx: r * 1.05, sy: 0.8, sz: r * 1.05 });
+  const k = rand();
+  if (k < 0.35) {
+    // Windmill.
+    place(b, G.cyl, x, y + 3, z, 0xfff3e0, { sx: 1.2, sy: 6, sz: 1.2 });
+    place(b, G.cone6, x, y + 6.8, z, 0xe8343f, { sx: 1.6, sy: 1.6, sz: 1.6 });
+    for (let i = 0; i < 4; i++) place(b, G.box, x, y + 6, z + 1.3, 0xffffff, { sx: 0.5, sy: 6, sz: 0.1, rz: (i * Math.PI) / 2 + 0.3 });
+  } else if (k < 0.6) {
+    // Little castle.
+    place(f, facadeBox(5, 5, 5), x, y + 2.9, z, 0xe6dcf5);
+    for (const [ox, oz] of [[-2.5, -2.5], [2.5, -2.5], [-2.5, 2.5], [2.5, 2.5]]) {
+      place(b, G.cyl, x + ox, y + 4, z + oz, 0xf2ecff, { sx: 1, sy: 8, sz: 1 });
+      place(b, G.cone6, x + ox, y + 8.8, z + oz, 0x6f7ef2, { sx: 1.3, sy: 1.8, sz: 1.3 });
+    }
+  } else {
+    for (let i = 0; i < 3; i++) {
+      const tx = x + randRange(rand, -r * 0.5, r * 0.5), tz = z + randRange(rand, -r * 0.5, r * 0.5);
+      place(b, G.cylLow, tx, y + 1.5, tz, 0x8a5a36, { sx: 0.3, sy: 3, sz: 0.3 });
+      place(b, G.ico, tx, y + 3.8, tz, pick(rand, [0xff9ad5, 0x7fd46a, 0xffd23f]), { sx: 1.8, sy: 1.6, sz: 1.8 });
+    }
+  }
+  obstacles?.push({ pos: new Vector3(x, y - r * 0.4, z), radius: r * 0.95 });
+}
+
+function cloudPuff(b, x, y, z, s, rand) {
+  for (let i = 0; i < 5; i++) place(b, G.ico, x + (i - 2) * s * 0.9, y + (i % 2) * s * 0.4, z + randRange(rand, -s, s) * 0.5, 0xffffff, { sx: s, sy: s * 0.7, sz: s });
+}
+
+function decorateSky(build, rand) {
+  const geo = build.geo;
+  const route = build.route;
+  const obstacles = build.obstacles;
+  const clearOf = (p, r) => route.every((q) => q.pos.distanceToSquared(p) > (r + 9) ** 2);
+  // Floating islands along the course, off to the sides.
+  for (let i = 0; i < route.length; i += 45) {
+    const p = route[i];
+    for (const side of [-1, 1]) {
+      if (rand() < 0.35) continue;
+      const r = randRange(rand, 5, 11);
+      const pos = p.pos.clone().addScaledVector(p.right, side * randRange(rand, 22, 45)).add(new Vector3(0, randRange(rand, -18, 4), 0));
+      if (!clearOf(pos, r)) continue;
+      floatingIsland(geo, pos.x, pos.y, pos.z, r, rand, obstacles);
+    }
+  }
+  // Hot-air balloons and rocks close to the line: near misses, not walls.
+  for (let i = 60; i < route.length - 60; i += 70) {
+    const p = route[i];
+    const pos = p.pos.clone().addScaledVector(p.right, (rand() < 0.5 ? -1 : 1) * randRange(rand, 12, 18)).addScaledVector(p.up, randRange(rand, -4, 6));
+    if (!clearOf(pos, 3)) continue;
+    const b = geo.get('decor', pos.x, pos.z);
+    if (rand() < 0.6) {
+      place(b, G.ico, pos.x, pos.y + 2, pos.z, pick(rand, [0xff5a4a, 0xffd23f, 0x6f7ef2, 0xff9ad5]), { sx: 3, sy: 3.4, sz: 3 });
+      place(b, G.box, pos.x, pos.y - 2.4, pos.z, 0x8a5a36, { sx: 1.4, sy: 1, sz: 1.4 });
+      obstacles.push({ pos: pos.clone().add(new Vector3(0, 1.5, 0)), radius: 3 });
+    } else {
+      place(b, G.rock, pos.x, pos.y, pos.z, pick(rand, CLIFF), { sx: 3, sy: 2.4, sz: 3, ry: rand() * 6 });
+      obstacles.push({ pos: pos.clone(), radius: 2.6 });
+    }
+  }
+  // A sea of clouds far below.
+  const bounds = build.bounds;
+  const floor = build.killY + 8;
+  for (let i = 0; i < 90; i++) {
+    const x = randRange(rand, bounds.min.x - 150, bounds.max.x + 150), z = randRange(rand, bounds.min.z - 150, bounds.max.z + 150);
+    cloudPuff(geo.get('decor', x, z), x, floor + randRange(rand, -6, 6), z, randRange(rand, 6, 14), rand);
+  }
+  // Big islands in the distance.
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + rand();
+    const rx = (bounds.max.x - bounds.min.x) / 2 + randRange(rand, 90, 160), rz = (bounds.max.z - bounds.min.z) / 2 + randRange(rand, 90, 160);
+    const x = (bounds.min.x + bounds.max.x) / 2 + Math.cos(a) * rx, z = (bounds.min.z + bounds.max.z) / 2 + Math.sin(a) * rz;
+    floatingIsland(geo, x, bounds.min.y + randRange(rand, -20, 30), z, randRange(rand, 16, 28), rand, null);
+  }
+}
+
 const DECORATORS = {
   rooftop: decorateRooftop,
   ruins: decorateRuins,
   frost: decorateFrost,
+  canyon: decorateCanyon,
+  ocean: decorateOcean,
+  sky: decorateSky,
 };
 
 /** Returns a `decorate(build)` function for TrackBuilder. */

@@ -73,12 +73,30 @@ export default {
     ['ice', false],
     ['cp'],
     ['down2'],
-    ['straight', 3],
-    ['right'],
-    ['left'],
+    ['straight', 1],
+    // Shortcut: a frozen creek beside the lodge road. Straight, fast — and
+    // glassy ice all the way.
+    ['shortcut', 'right', {
+      main: [['left'], ['straight', 2], ['right'], ['right'], ['straight', 2], ['left']],
+      alt: [['ice'], ['straight', 2], ['ice', false]],
+    }],
     ['straight', 2],
     ['boost'],
     ['straight', 3],
+    ['cp'],
+    ['bankRight'], // → the lodge loop
+    ['straight', 2],
+    ['loopRight'],
+    ['straight', 3],
+    ['ice'],
+    ['wideLeft'],
+    ['ice', false],
+    ['straight', 3],
+    ['ramp'],
+    ['gap', 3, -2],
+    ['straight', 3],
+    ['boost'],
+    ['straight', 2],
     ['finish'],
   ],
 };

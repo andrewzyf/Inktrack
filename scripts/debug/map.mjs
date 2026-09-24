@@ -7,7 +7,7 @@ if (data.pieces.error) console.log('ERROR:', data.pieces.error);
 const rs = data.pieces.map((p, i) => resolvePlacement(p, i));
 let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
 for (const r of rs) for (const [x, z] of r.cells) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z); }
-const sym = { start: 'S', finish: 'F', checkpoint: 'C', boost: 'B', ramp: 'R', loop: 'O', loopRight: 'O', turn: 't', curve: 'c', bank: 'b', slope: '/', slopeLong: '/', straight: '.' };
+const sym = { start: 'S', finish: 'F', checkpoint: 'C', boost: 'B', ramp: 'R', loop: 'O', loopRight: 'O', turn: 't', curve: 'c', bank: 'b', slope: '/', slopeLong: '/', straight: '.', fork: 'Y', forkRight: 'Y' };
 const grid = {};
 rs.forEach((r) => r.cells.forEach(([x, z]) => { grid[`${x},${z}`] = (grid[`${x},${z}`] ? '#' : '') + (sym[r.type] || '?'); }));
 for (let z = maxZ; z >= minZ; z--) {

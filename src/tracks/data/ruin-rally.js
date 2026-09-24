@@ -55,9 +55,15 @@ export default {
     ['straight', 3],
     ['up', 1], // mossy hump
     ['down', 1],
-    ['straight', 7],
+    ['straight', 2],
     ['cp'],
-    ['straight', 6],
+    ['straight', 1],
+    // Shortcut: the causeway swings out around a shrine; the old temple
+    // aqueduct runs straight past it — boost, then leap into the merge.
+    ['shortcut', 'left', {
+      main: [['right'], ['straight', 3], ['left'], ['straight', 2], ['left'], ['straight', 3], ['right']],
+      alt: [['boost'], ['straight', 1], ['ramp'], ['gap', 1, 0]],
+    }],
     ['bankRight'], // → west, north of the temple stairs
     ['straight', 2],
     ['left'],
@@ -76,6 +82,22 @@ export default {
     ['straight', 4],
     ['boost'],
     ['straight', 2],
+    ['cp'],
+    ['bankLeft'], // → the sunken plaza
+    ['straight', 2],
+    ['down2'],
+    ['straight', 2],
+    ['right'],
+    ['left'],
+    ['left'],
+    ['right'],
+    ['straight', 2],
+    ['up', 1],
+    ['ramp'],
+    ['gap', 3, -1],
+    ['straight', 3],
+    ['boost'],
+    ['straight', 3],
     ['finish'],
   ],
 };
