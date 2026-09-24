@@ -87,6 +87,15 @@ export class TouchControls {
     onSettingsChange(() => this._applySettings());
   }
 
+  /** Relabel the pedals for the vehicle: car/boat GAS·BRAKE, plane UP·DOWN. */
+  setVehicle(kind) {
+    this.vehicle = kind;
+    const plane = kind === 'plane';
+    this.el.querySelector('.tc-gas span').textContent = plane ? 'UP' : 'GAS';
+    this.el.querySelector('.tc-brake span').textContent = plane ? 'DOWN' : 'BRAKE';
+    this.el.querySelector('.tc-drift span').textContent = plane ? 'BANK' : 'DRIFT';
+  }
+
   onAction(fn) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
@@ -191,7 +200,8 @@ export class TouchControls {
   sample(out) {
     if (!this.enabled) return out;
     const active = new Set(this.pointers.values());
-    if (active.has('gas') || (this.autoGas && !active.has('brake'))) out.throttle = 1;
+    // Planes fly themselves forward: GAS/BRAKE become climb/dive, so no auto-gas.
+    if (active.has('gas') || (this.autoGas && this.vehicle !== 'plane' && !active.has('brake'))) out.throttle = 1;
     if (active.has('brake')) out.brake = 1;
     if (active.has('drift')) out.drift = true;
     let steer = 0;

@@ -20,7 +20,7 @@ export class EditorUI {
       <header class="ed-top">
         <button class="btn btn-small" data-ed="exit" title="Back to menu (Esc)">◀<span class="wide-only"> MENU</span></button>
         <input class="ed-name" maxlength="40" aria-label="Track name" spellcheck="false">
-        <select class="ed-theme" aria-label="Theme">${Object.values(THEMES).map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
+        <select class="ed-theme" aria-label="Theme">${Object.values(THEMES).map((t) => `<option value="${t.id}">${esc(t.name)}${t.vehicle ? ` (${t.vehicle})` : ''}</option>`).join('')}</select>
         <span class="ed-spacer"></span>
         <button class="btn btn-small" data-ed="undo" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
         <button class="btn btn-small" data-ed="redo" title="Redo (Ctrl+Y)" aria-label="Redo">↷</button>

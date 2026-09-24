@@ -61,6 +61,7 @@ export class Stage {
       midTint: theme.light.midTint,
       shadowTint: theme.light.shadowTint,
       ink: theme.light.ink,
+      litTint: theme.light.litTint ?? 0xffffff,
     });
   }
 

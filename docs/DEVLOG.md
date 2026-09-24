@@ -441,6 +441,106 @@ verification caught it; fixed.
 
 ---
 
+## Update — sea & sky, shortcuts, garage and progression
+
+Feedback: the engine hum was annoying, add real music, more and longer
+maps, hidden shortcuts, ocean/air modes with their own vehicles, vehicle
+customisation, and more reasons to keep playing.
+
+**Audio.** The engine used a sawtooth + square pair through a resonant
+filter (Q 3), so it droned. It is now a triangle + sine through a gentle
+low-pass (Q 0.6) with a slow 5.5 Hz wobble. It sits on its own bus with an
+*Engine sound* slider (default 30 %), so it peaks around a quarter of its old
+level. Boats and planes get their own pitch and filter ranges.
+Music is a small Web Audio sequencer (`src/audio/Music.js`) that plays seven
+arrangements from `songs.js`: a menu song, one per theme, and ocean/sky
+songs. Each has drums with kick side-chain "pump", bass, chords, arpeggios
+and a lead, plus a dotted-8th echo and a generated reverb. Songs cycle
+through their sections and drop into a breakdown every third pass. Music
+muffles under the pause menu and has its own slider and on/off toggle.
+**Real recordings:** drop `menu.mp3`, `rooftop.ogg` etc. into `assets/music/`
+and they replace the synthesized song with the same name. No licensed audio
+ships with the repo.
+
+**Shortcuts.** New `fork` / `forkRight` pieces are 2×3 plazas with three
+connectors: the entry, the main lane and a side lane. Driven backwards the
+same piece is a merge. Side-lane segments are tagged `lane`, so they render
+and collide but stay off the racing line. The turtle's
+`['shortcut', side, { main, alt }]` places the fork, runs both
+sub-scripts and then finds the merge rotation that joins them; it throws if
+the lanes don't meet. Pieces on a side lane carry `sc: id`. The race fires
+a `shortcut` event the first time the car is over one of their cells, and
+discoveries are saved. The traversal rule ("exit by the other connector")
+already did the right thing for three-connector pieces.
+*Bug caught:* `reversePath` flips a segment's left/right, but the wall flags
+weren't swapped. Every earlier piece had symmetric walls, so it only
+surfaced on the first reversed merge, where the car fell straight through
+the open side.
+
+**Tracks.** There are six. Rooftop Run gains an alley-hop shortcut and a
+tower-drop finale (1.2 → 1.5 km, par 50.4 s). Ruin Rally gains an aqueduct
+jump and a sunken-plaza section (1.7 km, par 48.4 s). Frost Peak gains a
+frozen-creek ice lane and a lodge loop (1.7 km, par 51.4 s). New:
+- *Canyon Blitz*: Red Canyon theme, two shortcuts, par 46.4 s.
+- *Tidal Run*: speedboat, par 38.5 s.
+- *Cloud Circuit*: plane, 2.6 km, par 50.5 s.
+
+`scripts/par-times.mjs` regenerates the par times (clean autopilot laps).
+
+**Ocean mode.** The track pipeline is unchanged; the Tropic Bay theme does
+the work:
+- The lanes use an animated water "road" texture. A new `uMapOffset`
+  uniform scrolls it along the direction of travel.
+- A tiled sea plane sits just below lane level, so low lanes read as
+  buoyed channels and raised ones as flumes on stilts.
+- The boat is `CarPhysics` with a looser profile (`vehicles/profiles.js`):
+  lateral grip 4.2 instead of 12, easier drifts and bouncier barriers.
+  Visually it bobs, planes its nose up and throws a foam wake.
+
+**Air mode.** `FlightPhysics` has the same public surface as `CarPhysics`:
+- The plane always flies forward. Up/down pitch it, steering banks and
+  turns, and drift is a hard bank that charges the same boost meter.
+- Dives add speed and climbs bleed it off.
+- Sky layouts are ordinary piece layouts that are never rendered. The
+  route is scaled ×2.5 so turns suit a plane's turning circle.
+- Checkpoints become rings, boost pads become boost hoops, and guide hoops
+  mark the path.
+- Floating islands, balloons and rocks are sphere obstacles. Hitting one,
+  falling below the course, or straying more than 55 m from it triggers a
+  respawn.
+- `FlightAutopilot` flies it for attract mode, tests and the rival.
+
+**Garage.** Vehicles are rebuilt from a *look*, cached per look:
+- Bodies: racer / muscle / buggy cars, speedboat / hydroplane boats and
+  prop / jet planes.
+- Paint, accent colour, decals (stripes, race number, flames, checkers,
+  stars), spoilers, rims and boost-trail colour.
+
+Items cost ink. Looks never change handling, so times stay comparable.
+The garage menu sits over a turntable showroom.
+
+**Progression and variety:**
+- **Ink pots**: 9–20 per track along the racing line, including over jump
+  gaps, plus one on every shortcut lane. Pots found on earlier runs show
+  faded.
+- **Medals** from par: bronze ×1.35, silver ×1.15, gold ×1.04, and an *ink
+  medal* at ×0.97. The ink medal means beating the bot, which usually
+  takes the shortcuts. The HUD shows the next medal to chase.
+- **Inkbot rival** (easy/medium/hard): the autopilot races alongside as a
+  pink ghost with no collisions, stepped in lockstep with your race.
+- **Twists** (mutators): Moon Jump, Turbo, Butter Tyres, Mini, Night Ink.
+  They are just for fun, so records and ghosts are skipped.
+- **Daily challenge**: a date-seeded track + twist + goal (pots, beat the
+  bot, or no respawns), worth +25 ink once.
+- Ink economy: pot 5, shortcut 10, medals 5/10/20/40, daily 25.
+
+**Testing.** `npm test` runs 81 tests, including every starter track
+completing with zero respawns under its autopilot. Browser checks: the
+existing `npm run verify` suite, the audio check, plane keyboard controls,
+rival + twists, and portrait/landscape menus.
+
+---
+
 ## Things that need your input
 
 1. **Handling feel vs. PolyTrack.** The tune is an educated guess. Drive it
@@ -457,3 +557,10 @@ verification caught it; fixed.
 5. **Real-device testing.** Everything was verified in Chromium (desktop +
    mobile emulation with real multi-touch). Please check on an actual phone,
    especially tilt steering on iOS (permission prompt) and GPU frame rate.
+6. **Music.** The soundtrack is synthesized so it ships license-free. If you
+   have tracks you'd rather use, drop them into `assets/music/` with the
+   song ids as file names (`menu`, `rooftop`, `ruins`, `frost`, `canyon`,
+   `ocean`, `sky`).
+7. **Ink prices and medal thresholds.** They're a first pass
+   (`src/vehicles/garage.js`, `src/storage/progress.js`). Tell me if unlocks
+   come too fast or too slow.

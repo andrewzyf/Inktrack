@@ -27,6 +27,25 @@ await raceShot('?autopilot&track=rooftop-run', 15.7, 'loop');
 await raceShot('?autopilot&track=ruin-rally', 11, 'ruin-rally');
 await raceShot('?autopilot&track=frost-peak', 7.4, 'frost-peak');
 await raceShot('?autopilot&track=rooftop-run&touch=1', 5.2, 'mobile', { mobile: true, width: 390, height: 844 });
+await raceShot('?autopilot&track=canyon-blitz', 8.6, 'canyon-blitz');
+await raceShot('?autopilot&track=tidal-run', 9, 'tidal-run');
+await raceShot('?autopilot&track=cloud-circuit', 9, 'cloud-circuit');
+await raceShot('?autopilot&track=rooftop-run&rival=hard&twist=night', 12, 'night-rival');
+{
+  const { browser, page } = await launch();
+  await page.goto(base);
+  await page.waitForFunction(() => window.__INKTRACK__?.menus?.current === 'title');
+  await page.click('[data-action=play]');
+  await sleep(800);
+  await shot(page, 'tracks');
+  await page.click('[data-action=back]');
+  await page.click('[data-action=garage]');
+  await sleep(600);
+  await page.evaluate(() => window.__INKTRACK__.showroom.setLook({ kind: 'car', body: 'muscle', paint: 'blue', accent: 'white', decal: 'flames', spoiler: 'duck', rims: 'gold' }));
+  await sleep(1500);
+  await shot(page, 'garage');
+  await browser.close();
+}
 {
   const { browser, page } = await launch();
   await page.goto(base + '?editor');

@@ -719,7 +719,7 @@ body.touch-device, body.touch-device * { -webkit-touch-callout: none; }
 @media (orientation: portrait) {
   .screen-garage { align-items: flex-end; }
   .screen-garage .screen.garage { margin: auto 0 0; }
-  .garage-panel { max-height: 42vh; }
+  .garage-panel { max-height: 38vh; }
 }
 
 .toast {

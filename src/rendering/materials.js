@@ -9,6 +9,7 @@ import { toonVertex, toonFragment, outlineVertex, outlineFragment } from './shad
 export const shared = {
   uLightDir: { value: new Vector3(0.45, 0.8, 0.35).normalize() },
   uMidTint: { value: new Color(0.8, 0.78, 0.86) },
+  uLitTint: { value: new Color(1, 1, 1) },
   uShadowTint: { value: new Color(0.56, 0.52, 0.7) },
   uBands: { value: new Vector2(0.62, 0.36) },
   uInk: { value: new Color(0.55, 0.5, 0.66) },
@@ -23,7 +24,7 @@ export const shared = {
   uInkColor: { value: new Color(0x141018) },
 };
 
-const toonUniformKeys = ['uLightDir', 'uMidTint', 'uShadowTint', 'uBands', 'uInk', 'uHalftoneSize', 'uHalftone', 'uFogColor', 'uFogRange'];
+const toonUniformKeys = ['uLightDir', 'uMidTint', 'uLitTint', 'uShadowTint', 'uBands', 'uInk', 'uHalftoneSize', 'uHalftone', 'uFogColor', 'uFogRange'];
 const outlineUniformKeys = ['uPxToWorld', 'uOutlinePx', 'uMaxDist', 'uInkColor', 'uFogColor', 'uFogRange'];
 
 export const renderSettings = {
@@ -111,7 +112,8 @@ export function setFog(color, near, far) {
   shared.uFogRange.value.set(near, far);
 }
 
-export function setLight({ direction, midTint, shadowTint, ink } = {}) {
+export function setLight({ direction, midTint, shadowTint, ink, litTint = 0xffffff } = {}) {
+  shared.uLitTint.value.set(litTint);
   if (direction) shared.uLightDir.value.copy(direction).normalize();
   if (midTint !== undefined) shared.uMidTint.value.set(midTint);
   if (shadowTint !== undefined) shared.uShadowTint.value.set(shadowTint);

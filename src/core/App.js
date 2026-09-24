@@ -135,7 +135,12 @@ export class App {
       this.openEditor();
     } else if (p.has('track') || p.has('autopilot')) {
       const ap = p.get('autopilot');
-      this.startRace(p.get('track') || STARTER_TRACKS[0].id, { autopilot: p.has('autopilot'), aggression: ap ? parseFloat(ap) || 1 : 1 });
+      this.startRace(p.get('track') || STARTER_TRACKS[0].id, {
+        autopilot: p.has('autopilot'),
+        aggression: ap ? parseFloat(ap) || 1 : 1,
+        rival: p.get('rival') || null,
+        mutators: p.get('twist') ? p.get('twist').split(',') : [],
+      });
     } else {
       this.showMenu();
     }
@@ -256,7 +261,8 @@ export class App {
     });
     this.setMode(session);
     this.audio.setVehicle(session.vehicle);
-    this.hud.setTarget(this._nextMedal(track, progress.medal, best?.time));
+    this.touch?.setVehicle(session.vehicle);
+    this.hud.setTarget(mutators.length || options.attract ? null : this._nextMedal(track, progress.medal, best?.time));
     this.audio.setMusicMuffled(false);
     this.audio.playMusic(songForTheme(track.theme));
     return session;

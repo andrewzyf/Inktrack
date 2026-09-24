@@ -145,7 +145,7 @@ export function nightTheme(theme) {
     ...theme,
     id: theme.id,
     night: true,
-    light: { ...theme.light, midTint: dim(theme.light.midTint, 0.6, 0.15), shadowTint: dim(theme.light.shadowTint, 0.45, 0.15), ink: 0x0b0918 },
+    light: { ...theme.light, midTint: dim(theme.light.midTint, 0.45, 0.18), shadowTint: dim(theme.light.shadowTint, 0.3, 0.15), ink: 0x0b0918, litTint: 0x8d8fc4 },
     fog: { color: 0x14123a, near: theme.fog.near * 0.6, far: theme.fog.far * 0.75 },
     sky: {
       ...theme.sky,

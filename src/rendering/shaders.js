@@ -56,6 +56,7 @@ export const toonFragment = /* glsl */ `
   uniform vec3 uFogColor;
   uniform vec2 uFogRange;
   uniform float uShine;
+  uniform vec3 uLitTint;
   #ifdef USE_MAP
     uniform sampler2D map;
     uniform vec2 uMapOffset;
@@ -76,7 +77,7 @@ export const toonFragment = /* glsl */ `
     float l = dot(N, uLightDir) * 0.5 + 0.5;
     float lit = step(uBands.x, l);
     float mid = step(uBands.y, l);
-    vec3 shade = mix(uShadowTint, mix(uMidTint, vec3(1.0), lit), mid);
+    vec3 shade = mix(uShadowTint, mix(uMidTint, uLitTint, lit), mid);
     vec3 col = base * shade;
 
     #ifdef USE_HALFTONE

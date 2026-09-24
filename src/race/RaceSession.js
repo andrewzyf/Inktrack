@@ -229,7 +229,7 @@ export class RaceSession {
         sfx?.play('count');
         break;
       case 'go':
-        fx?.show('GO!', 'go', { size: 17, duration: 700, rotate: -4 });
+        fx?.show('GO!', 'go', { size: 17, duration: this.vehicle === 'plane' ? 1400 : 700, rotate: -4, sub: this.vehicle === 'plane' ? (this.app.isTouch ? 'UP climbs · DOWN dives' : 'W climbs · S dives · SPACE banks') : '' });
         sfx?.play('go');
         break;
       case 'checkpoint': {

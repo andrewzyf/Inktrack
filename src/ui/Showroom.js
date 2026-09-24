@@ -65,8 +65,13 @@ export class Showroom {
     const portrait = stage.renderer.aspect < 1;
     const dist = this.kind === 'plane' ? 11 : 8;
     // The menu covers the right half (bottom in portrait): frame the vehicle beside it.
-    cam.position.set(-dist * 0.35, portrait ? 6 : 2.6, dist * (portrait ? 1.3 : 1));
-    cam.lookAt(_look.set(portrait ? 0 : 3.4, portrait ? -2.6 : 0.1, 0));
+    if (portrait) {
+      cam.position.set(-dist * 0.35, 4.5, dist * 1.25);
+      cam.lookAt(_look.set(0, -10, 0));
+    } else {
+      cam.position.set(-dist * 0.35, 2.6, dist);
+      cam.lookAt(_look.set(3.4, 0.1, 0));
+    }
     stage.render(dt, { speedLines: 0 });
   }
 
