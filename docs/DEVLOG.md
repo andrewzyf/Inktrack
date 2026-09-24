@@ -209,3 +209,39 @@ wall top is exactly that colour on screen.
 decor, 16k facades) and 41 chunk meshes. A typical frame draws 50–70 calls
 and 70–110k triangles including outlines. Revisited in the Phase 9
 performance pass.
+
+## Phase 5 — Ghost replay + leaderboard
+
+**Built**
+- `replay/Recorder.js`: position + orientation + state flags every 4 ticks
+  (30 Hz). Sample *k* is exactly race tick 4·*k*, so playback is frame-rate
+  independent. `replay/codec.js` stores samples as base64 Float32 (a 36 s lap
+  is about 47 KB in localStorage).
+- `replay/GhostPlayer.js`: Catmull-Rom positions and slerped rotations,
+  never interpolating across respawn teleports. The ghost is a translucent
+  blue ink-outlined car with spinning wheels. It fades when it overlaps the
+  player and waits at the finish line.
+- `storage/storage.js` (namespaced, try/catch everywhere, memory fallback),
+  `storage/records.js` (top-10 times per track, ghost save/load),
+  `storage/settings.js`. Record keys include a **hash of the track layout**,
+  so edited tracks never compare times across layouts.
+- Menus (`ui/Menus.js`): title with bursting logo, track select cards (PB +
+  ghost badge), records table per track, settings, pause, results ("NEW
+  RECORD!" / "FIRST TIME!" / "FINISH!", delta vs best, rank, top-5 table,
+  RETRY / NEXT TRACK / TIMES / MENU). Keyboard: arrows move focus, Enter
+  activates, Esc goes back or pauses. The autopilot laps the tracks behind
+  the menus (attract mode).
+- HUD shows the best time and flashes the split delta at every checkpoint
+  against the best run's splits.
+
+**Verified**
+- `tests/phase5-replay.test.js` (8 tests): 30 Hz coverage of a full lap;
+  codec round-trip; playback matches the recorded path at every sample (<1 mm)
+  and ends at the finish; ghost size budget; stable layout keys that change
+  on edit; top-10 ordering, ranks, new-best detection; ghost save/load and
+  no crash when the storage quota is full.
+- Browser (`scripts/verify-phase5.mjs`): lap 1 → 36.237 s, rank 1, ghost
+  saved. Lap 2 with a slower driver → ghost loaded and visible, delta shown
+  at CP1, finish 37.139 s → rank 2, previous best 36.237.
+- **Bug caught:** the results panel showed `--:--.---` / "+NaN" because the
+  stored result had no `time` field. Fixed.

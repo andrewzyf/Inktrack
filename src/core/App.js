@@ -5,27 +5,37 @@ import { Renderer } from '../rendering/Renderer.js';
 import { Stage } from '../rendering/Stage.js';
 import { HUD } from '../ui/HUD.js';
 import { ImpactLayer } from '../ui/Impact.js';
+import { Menus } from '../ui/Menus.js';
 import { RaceSession } from '../race/RaceSession.js';
 import { Playground } from '../race/Playground.js';
-import { getStarterTrack, STARTER_TRACKS } from '../tracks/starterTracks.js';
+import { STARTER_TRACKS } from '../tracks/starterTracks.js';
+import { getTheme } from '../tracks/themes.js';
+import { trackKey, getRecords, getBest, submitTime, saveGhost, loadGhost, clearRecords } from '../storage/records.js';
+import { getSettings } from '../storage/settings.js';
 
 /**
  * Top-level state machine. Owns the renderer, the shared Stage, input, the
- * fixed-step loop and the DOM UI layers, and swaps between modes
- * (race, playground; menus and editor arrive in later phases).
+ * fixed-step loop and the DOM UI layers, and swaps between modes:
+ *   menu   — title/track select/records/settings over an autopilot attract race
+ *   race   — a RaceSession (+ pause and results overlays)
+ *   editor — the track editor (Phase 7)
  */
 export class App {
   constructor({ canvas, uiRoot }) {
     this.canvas = canvas;
     this.uiRoot = uiRoot;
     this.params = new URLSearchParams(location.search);
-    this.renderer = new Renderer(canvas, this.params.get('quality') || undefined);
+    const q = this.params.get('quality') || getSettings().quality;
+    this.renderer = new Renderer(canvas, q === 'auto' ? undefined : q);
     this.stage = new Stage(this.renderer);
     this.input = new Input();
     this.hud = new HUD(uiRoot);
     this.impacts = new ImpactLayer(uiRoot);
+    this.menus = new Menus(this, uiRoot);
     this.mode = null;
+    this.modeName = null;
     this.paused = false;
+    this.attractIndex = 0;
     this.loop = new GameLoop({
       tickRate: PHYSICS.tickRate,
       fixedUpdate: (dt) => {
@@ -42,11 +52,22 @@ export class App {
       },
     });
     this.input.onAction((action) => this.onAction(action));
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && this.modeName === 'race' && this.mode?.race.state === 'racing') this.pause();
+    });
   }
 
   start() {
-    if (this.params.has('playground')) this.setMode(new Playground({ stage: this.stage, input: this.input }));
-    else this.startRace(this.params.get('track') || STARTER_TRACKS[0].id, { autopilot: this.params.has('autopilot') });
+    const p = this.params;
+    if (p.has('playground')) {
+      this.modeName = 'playground';
+      this.setMode(new Playground({ stage: this.stage, input: this.input }));
+    } else if (p.has('track') || p.has('autopilot')) {
+      const ap = p.get('autopilot');
+      this.startRace(p.get('track') || STARTER_TRACKS[0].id, { autopilot: p.has('autopilot'), aggression: ap ? parseFloat(ap) || 1 : 1 });
+    } else {
+      this.showMenu();
+    }
     this.loop.start();
   }
 
@@ -55,15 +76,157 @@ export class App {
     this.mode = mode;
   }
 
-  startRace(trackOrId, options = {}) {
-    const data = typeof trackOrId === 'string' ? getStarterTrack(trackOrId) || STARTER_TRACKS[0] : trackOrId;
+  // ── tracks & records ────────────────────────────────────────────────
+  /** Every raceable track (built-ins, then custom), with a stable `ref`. */
+  listTracks() {
+    const list = STARTER_TRACKS.map((t) => ({ ...t, ref: t.id, themeName: getTheme(t.theme).name }));
+    for (const t of this.customTracks?.() || []) list.push({ ...t, ref: `custom:${t.id}`, themeName: getTheme(t.theme).name });
+    return list;
+  }
+
+  resolveTrack(ref) {
+    if (ref && typeof ref === 'object') return ref;
+    return this.listTracks().find((t) => t.ref === ref) || this.listTracks()[0];
+  }
+
+  bestFor(track) {
+    const key = trackKey(track);
+    const best = getBest(key);
+    return best ? { ...best, ghost: !!loadGhost(key) } : null;
+  }
+
+  recordsFor(track) {
+    return getRecords(trackKey(track));
+  }
+
+  clearTrackRecords(ref) {
+    clearRecords(trackKey(this.resolveTrack(ref)));
+  }
+
+  // ── modes ───────────────────────────────────────────────────────────
+  showMenu(screen = 'title') {
+    this.paused = false;
+    this.inTestDrive = false;
+    this.hud.show(false);
+    this.impacts.clear();
+    // Attract mode: the autopilot laps the built-in tracks behind the menus.
+    const track = STARTER_TRACKS[this.attractIndex % STARTER_TRACKS.length];
+    this.modeName = 'menu';
     this.setMode(null);
-    const session = new RaceSession(this, data, options);
+    this.setMode(new RaceSession(this, track, {
+      autopilot: true,
+      attract: true,
+      onFinish: () => {
+        this.attractIndex++;
+        setTimeout(() => this.modeName === 'menu' && this.mode?.options.attract && this._nextAttract(), 1500);
+      },
+    }));
+    this.menus.open(screen);
+  }
+
+  _nextAttract() {
+    const screen = this.menus.current;
+    const stack = this.menus.stack;
+    const track = STARTER_TRACKS[this.attractIndex % STARTER_TRACKS.length];
+    this.setMode(null);
+    this.setMode(new RaceSession(this, track, { autopilot: true, attract: true, onFinish: () => { this.attractIndex++; setTimeout(() => this.modeName === 'menu' && this._nextAttract(), 1500); } }));
+    this.menus.stack = stack;
+    if (screen) this.menus.refresh();
+  }
+
+  startRace(ref, options = {}) {
+    const track = this.resolveTrack(ref);
+    this.paused = false;
+    this.menus.hide();
+    this.impacts.clear();
+    const key = trackKey(track);
+    const best = getBest(key);
+    const ghost = getSettings().ghost && !options.attract ? loadGhost(key) : null;
+    this.modeName = 'race';
+    this.currentTrack = track;
+    this.setMode(null);
+    const session = new RaceSession(this, track, {
+      ...options,
+      bestTime: best?.time ?? null,
+      bestSplits: ghost?.splits ?? best?.splits ?? null,
+      ghost,
+      onFinish: (e, s) => this._onFinish(e, s, track, key),
+    });
     this.setMode(session);
     return session;
   }
 
+  _onFinish(e, session, track, key) {
+    if (session.options.autopilot && !this.params.has('record')) {
+      // Autopilot demo runs don't pollute the leaderboard (unless ?record).
+      setTimeout(() => this._showResults(track, { time: e.time, isBest: false, previousBest: null, rank: null, records: [] }), 1200);
+      return;
+    }
+    const result = { ...submitTime(key, e.time, e.splits), time: e.time };
+    if (result.isBest && session.recorder) {
+      saveGhost(key, session.recorder.toGhost({ time: e.time, splits: e.splits, trackKey: key }));
+    }
+    this.lastResult = result;
+    setTimeout(() => {
+      if (this.mode === session) this._showResults(track, result);
+    }, 1300);
+  }
+
+  _showResults(track, result) {
+    const list = this.listTracks();
+    const idx = list.findIndex((t) => t.ref === track.ref);
+    const next = list[(idx + 1) % list.length];
+    this.menus.open('results', {
+      ...result,
+      trackRef: track.ref,
+      trackName: track.name,
+      nextTrack: next && next.ref !== track.ref ? next.ref : null,
+      testDrive: !!this.inTestDrive,
+    });
+  }
+
+  restartRace() {
+    if (this.modeName !== 'race' || !this.mode) return;
+    // Re-create the session so a fresh best time/ghost is picked up.
+    const { autopilot, aggression } = this.mode.options;
+    if (this.mode.race.state === 'finished') this.startRace(this.currentTrack, { autopilot, aggression });
+    else {
+      this.menus.hide();
+      this.paused = false;
+      this.mode.restart();
+    }
+  }
+
+  pause() {
+    if (this.modeName !== 'race' || this.paused) return;
+    if (this.mode.race.state === 'finished') return;
+    this.paused = true;
+    this.menus.open('pause');
+  }
+
+  resume() {
+    if (!this.paused) return;
+    this.menus.hide();
+    this.paused = false;
+    this.loop.last = performance.now();
+  }
+
+  openEditor() {
+    this.impacts.show('SOON!', 'info', { size: 10, sub: 'editor arrives in phase 7' });
+  }
+
   onAction(action) {
+    if (this.modeName === 'race') {
+      if (action === 'pause') {
+        if (this.paused) this.resume();
+        else this.pause();
+        return;
+      }
+      // With a menu open, Enter activates the focused button instead.
+      if (this.paused || this.menus.visible) return;
+      if (action === 'restart') return this.restartRace();
+    }
+    if (this.modeName === 'menu') return;
     if (this.mode && this.mode.onAction) this.mode.onAction(action);
   }
 }

@@ -7,6 +7,10 @@ import { CarView } from '../rendering/CarView.js';
 import { Race } from './Race.js';
 import { Autopilot } from './Autopilot.js';
 import { hashString } from '../core/random.js';
+import { createCarModel, setGhostOpacity } from '../rendering/CarModel.js';
+import { Recorder } from '../replay/Recorder.js';
+import { GhostPlayer } from '../replay/GhostPlayer.js';
+import { PHYSICS } from '../config/physics.js';
 
 const _look = new Vector3();
 
@@ -33,7 +37,7 @@ export class RaceSession {
     this.car = this.race.car;
     this.view = new CarView({ scene: stage.trackGroup, world: this.build.world, particles: stage.particles, skids: stage.skids });
     this.view.setShadowTexture(stage.textures.shadow);
-    this.autopilot = options.autopilot ? new Autopilot(this.build.route) : null;
+    this.autopilot = options.autopilot ? new Autopilot(this.build.route, { aggression: options.aggression ?? 1 }) : null;
     if (this.autopilot) this.autopilot.attach(this.car);
 
     this.renderPos = new Vector3();
@@ -43,6 +47,25 @@ export class RaceSession {
     this.fallCam = null;
     this.bestTime = options.bestTime ?? null;
     this.bestSplits = options.bestSplits ?? null;
+
+    // Ghost of the best run + recorder for this one.
+    this.recorder = options.attract ? null : new Recorder(PHYSICS.tickRate, 4);
+    this.ghost = null;
+    if (options.ghost) {
+      try {
+        this.ghost = new GhostPlayer(options.ghost);
+        this.ghostModel = createCarModel({ ghost: true });
+        this.ghostModel.visible = false;
+        stage.trackGroup.add(this.ghostModel);
+        this.ghostPos = new Vector3();
+        this.ghostQuat = new Quaternion();
+        this.ghostSpin = 0;
+        this.ghostPrev = new Vector3();
+      } catch (err) {
+        console.warn('Ghost data unreadable, ignoring', err);
+        this.ghost = null;
+      }
+    }
 
     if (!options.attract) {
       app.hud.show(true);
@@ -57,6 +80,7 @@ export class RaceSession {
   }
 
   restart() {
+    this.recorder?.reset();
     this.race.restart();
     this.view.reset();
     this.app.stage.particles.clear();
@@ -79,7 +103,18 @@ export class RaceSession {
 
   fixedUpdate(dt) {
     const controls = this.autopilot ? this.autopilot.sample(this.app.input.controls) : this.app.input.sample();
+    const wasCountdown = this.race.state === 'countdown';
     this.race.step(dt, controls);
+    if (this.recorder) {
+      if (this.race.state === 'racing') {
+        if (wasCountdown) this.recorder.reset();
+        this.recorder.capture(this.race.raceTicks, this.car);
+      } else if (this.race.state === 'finished' && !this._recordedFinish) {
+        this._recordedFinish = true;
+        this.recorder.finish(this.car);
+      }
+      if (this.race.state === 'countdown') this._recordedFinish = false;
+    }
     this.view.setBraking(controls.brake > 0 && this.car.forwardSpeed > 5);
     this.car.drainEvents(this.carEvents);
     this.race.drainEvents(this.raceEvents);
@@ -164,6 +199,7 @@ export class RaceSession {
     this.renderQuat.slerpQuaternions(race.prevQuat, car.quaternion, alpha);
     this.view.update(dt, car, this.renderPos, this.renderQuat);
 
+    this._updateGhost(dt, alpha);
     const stage = this.app.stage;
     if (this.fallCam) {
       // Falling off: freeze the camera and watch the car tumble away.
@@ -188,6 +224,30 @@ export class RaceSession {
         boosting: car.boosting,
       });
     }
+  }
+
+  _updateGhost(dt, alpha) {
+    if (!this.ghost) return;
+    const race = this.race;
+    const m = this.ghostModel;
+    let t = 0;
+    if (race.state === 'racing') t = race.time + alpha / race.tickRate;
+    else if (race.state === 'finished') t = race.finishTime + race.stateTicks / race.tickRate;
+    const alive = this.ghost.sample(t, this.ghostPos, this.ghostQuat);
+    // Linger briefly at the finish line, then vanish.
+    m.visible = alive || t < this.ghost.duration + 1.5;
+    if (!m.visible) return;
+    m.position.copy(this.ghostPos);
+    m.quaternion.copy(this.ghostQuat);
+    const moved = this.ghostPos.distanceTo(this.ghostPrev);
+    this.ghostPrev.copy(this.ghostPos);
+    if (moved < 5) {
+      this.ghostSpin += moved / 0.37;
+      for (const w of m.userData.wheels) w.spin.rotation.x = this.ghostSpin;
+    }
+    // Fade when overlapping the player so it never hides the car.
+    const d = this.ghostPos.distanceTo(this.renderPos);
+    setGhostOpacity(m, d < 3 ? 0.12 : d < 8 ? 0.12 + ((d - 3) / 5) * 0.33 : 0.45);
   }
 
   dispose() {
