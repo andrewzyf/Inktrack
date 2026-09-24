@@ -145,10 +145,12 @@ function buildRoute(order) {
       if (d < 0.05) return;
       dist += d;
     }
-    pts.push({ pos: frame.pos.clone(), tangent: frame.tangent.clone(), up: frame.up.clone(), right: frame.right.clone(), dist, piece });
+    pts.push({ pos: frame.pos.clone(), tangent: frame.tangent.clone(), up: frame.up.clone(), right: frame.right.clone(), dist, piece, ice });
   };
+  let ice = false;
   for (const { rp, reversed } of order) {
     const segs = worldSegments(rp, reversed);
+    ice = rp.data.s === 'ice';
     for (const s of segs) {
       const n = Math.max(2, Math.ceil(s.path.length / 1.0));
       const prev = pts[pts.length - 1];
@@ -192,7 +194,8 @@ function gateInfo(rp, reversed, kind) {
     right,
     up: UP.clone(),
     halfWidth: ROAD_WIDTH / 2 + 0.6,
-    height: 8,
+    // Generous: flying over a gate after a crest still counts.
+    height: 25,
     spawn: {
       pos: center.clone().addScaledVector(UP, PHYSICS.car.rideHeight + 0.05),
       quat,
@@ -352,4 +355,25 @@ function addGateGeometry(geo, gate, palette) {
   }
   m.copy(basis).setPosition(new Vector3().copy(gate.center).addScaledVector(gate.up, top - 0.85));
   bb.append(g, m, palette.banner ?? 0xffffff);
+}
+
+/**
+ * Geometry for a single piece in its own local frame (editor previews,
+ * instanced rendering). Returns a GeoSet with one chunk per material.
+ */
+export function buildPieceGeometry(type, { surface = null, palette = {} } = {}) {
+  const def = getPiece(type);
+  const geo = new GeoSet(1e6);
+  for (const s of pieceSegments(type)) {
+    const mat = s.surface === 'boost' ? 'boost' : surface === 'ice' ? 'ice' : 'road';
+    sweepRoadGeometry(geo.get(mat), s.path, {
+      walls: s.walls, width: ROAD_WIDTH, wallHeight: WALL_HEIGHT, wallThickness: WALL_THICKNESS, slab: SLAB,
+      spacing: s.spacing || 2, capStart: s.capStart, capEnd: s.capEnd, palette,
+    });
+  }
+  if (def.gate) {
+    const f = new Vector3(0, 0, 1);
+    addGateGeometry(geo, { kind: def.gate, center: new Vector3(), forward: f, right: new Vector3(-1, 0, 0), up: UP.clone() }, palette);
+  }
+  return geo;
 }

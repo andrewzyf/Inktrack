@@ -245,3 +245,39 @@ performance pass.
   at CP1, finish 37.139 s → rank 2, previous best 36.237.
 - **Bug caught:** the results panel showed `--:--.---` / "+NaN" because the
   stored result had no `time` field. Fixed.
+
+## Phase 6 — Ruin Rally + Frost Peak
+
+**Built**
+- **Ruin Rally** (`data/ruin-rally.js`): 109 pieces, 1.36 km, 6 checkpoints.
+  Temple stairs up and down, a leap across the ravine, a courtyard
+  switchback, the Serpent Loop, a mossy hump that launches you over a gate at
+  speed, and a long banked sweep home. Decor: stone causeway pillars with
+  capitals and hanging vines, a faceted low-poly jungle canopy, broken
+  columns, arches, stone heads facing the track, braziers, distant stepped
+  pyramids, a mist-green floor, plus a jungle/temple poster sky.
+- **Frost Peak** (`data/frost-peak.js`): 96 pieces, 1.25 km, 5 checkpoints,
+  **16 ice pieces** (ice shelf, icy loop approach, frozen waterfall).
+  Switchback climbs, the Avalanche Jump (4 cells, 4 levels down), an ice
+  loop, and a long descent to the lodge. Decor: snow-capped rock ledges with
+  strata facades, pines, rocks, ice crystals, the odd snowman, and snowy
+  mountain posters.
+- Each theme has its own road atlas (asphalt / stone slabs / packed snow +
+  ice), facade texture, wall palette, fog, light tint and poster sky.
+- The autopilot is ice-aware (corners on ice at 22 % lateral grip).
+
+**Verified** — `tests/phase6-tracks.test.js` (10 tests): all 3 tracks have
+straights, banked curves, a jump, a loop and ≥ 4 checkpoints, are > 1 km,
+stay under 130k render triangles, and **are completed by the autopilot with
+0 respawns** (Rooftop 36.2 s, Ruins 38.7 s, Frost 37.1 s). Themes are
+distinct in road style, sky and palette. Browser screenshots of each.
+
+**Issues found & fixed**
+- Crest physics: the car flies off slope tops at speed (like PolyTrack), so
+  a curve right after a climb was unmakeable. I redesigned Frost Peak with
+  landing room after every climb.
+- Flying high over a checkpoint after a crest didn't count (trigger was 8 m
+  tall). Triggers are now 25 m tall.
+- Frost decor started at 316k triangles. Low-poly open cones/trunks, fewer
+  props per cell and no small props beyond 4 cells brought it to 109k
+  (Ruins 87k, Rooftop 59k).

@@ -97,7 +97,8 @@ export class Autopilot {
       const k = this.curv[i];
       if (k < 1e-3) continue;
       const radius = 1 / k;
-      const v = Math.min(Math.sqrt(this.maxLatAccel * radius), radius * 2.35);
+      const lat = r[i].ice ? this.maxLatAccel * 0.22 : this.maxLatAccel;
+      const v = Math.min(Math.sqrt(lat * radius), radius * 2.35);
       const d = Math.max(0, r[i].dist - r[this.index].dist);
       // v² = v_corner² + 2·a·d with a ≈ braking decel
       limit = Math.min(limit, Math.sqrt(v * v + 2 * 30 * d));
