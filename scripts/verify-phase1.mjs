@@ -1,0 +1,27 @@
+import { launch, sleep } from './pw.mjs';
+const url = process.argv[2] || 'http://localhost:4173/';
+const { browser, page, logs } = await launch();
+await page.goto(url);
+await page.waitForFunction(() => window.__INKTRACK__);
+const state = () => page.evaluate(() => {
+  const c = window.__INKTRACK__.car;
+  return { pos: c.position.toArray().map((v) => +v.toFixed(2)), speed: +c.speed.toFixed(2), grounded: c.grounded };
+});
+console.log('start', await state());
+await page.keyboard.down('KeyW');
+await sleep(1500);
+console.log('after 1.5s W', await state());
+await page.screenshot({ path: 'screenshots/phase1-straight.png' });
+await page.keyboard.down('KeyD');
+await sleep(800);
+console.log('after 0.8s W+D', await state());
+await page.screenshot({ path: 'screenshots/phase1-turn.png' });
+await page.keyboard.up('KeyD');
+await page.keyboard.up('KeyW');
+await page.keyboard.down('KeyS');
+await sleep(2500);
+console.log('after 2.5s S (brake→reverse)', await state());
+await page.keyboard.up('KeyS');
+console.log('fps', await page.evaluate(() => window.__INKTRACK__.loop.fps.toFixed(1)));
+console.log(logs.join('\n'));
+await browser.close();
